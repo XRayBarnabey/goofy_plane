@@ -61,7 +61,6 @@ export class TerrainView {
     const city = new THREE.Group();
     const asphalt = new THREE.MeshLambertMaterial({ color: 0x333b43 });
     const markings = new THREE.MeshLambertMaterial({ color: 0xe6d16a });
-    const glass = new THREE.MeshLambertMaterial({ color: 0x76b9ce });
     const ground = new THREE.Mesh(new THREE.PlaneGeometry(1800, 1800).rotateX(-Math.PI / 2), asphalt);
     ground.position.y = 25.1;
     city.add(ground);

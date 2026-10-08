@@ -69,10 +69,12 @@ function connect(name: string, roomCode?: string) {
       case "welcome":
         myId = m.id; terrain = new Terrain(m.seed); tview = new TerrainView(terrain, scene); respawn();
         $("room-status").textContent = `Code de partie : ${m.room}`;
+        $("room-display").textContent = `Partie : ${m.room}`;
         feed(`Partie ${m.room} créée ou rejointe`);
         break;
       case "invalid-room":
         $("room-status").textContent = "Code de partie introuvable";
+        $("menu").style.display = "flex";
         feed("Code de partie introuvable");
         break;
       case "join": names.set(m.id, m.name); { const r = remotes.get(m.id); if (r) setName(r, m.name); } break;
@@ -84,7 +86,7 @@ function connect(name: string, roomCode?: string) {
         feed(`💥 ${m.killer} a abattu ${m.victim}`);
         if (m.victimId === myId) { deaths++; respawn(); }
         break;
-      case "full": alert("Serveur plein"); break;
+      case "full": $("room-status").textContent = "Serveur plein"; $("menu").style.display = "flex"; break;
       case "snap": {
         const rows: string[] = [];
         for (const p of m.players) {

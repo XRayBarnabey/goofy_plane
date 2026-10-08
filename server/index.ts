@@ -43,7 +43,6 @@ const server = http.createServer((req, res) => {
 
 const wss = new WebSocketServer({ server, path: "/ws", maxPayload: 4096 });
 const send = (ws: WebSocket, m: unknown) => { if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(m)); };
-const broadcast = (m: unknown) => { for (const pl of players.values()) send(pl.ws, m); };
 const broadcastRoom = (room: string, m: unknown) => {
   for (const id of rooms.get(room) ?? []) {
     const pl = players.get(id);
@@ -74,7 +73,7 @@ wss.on("connection", (ws, request) => {
   }
   if (!room) { send(ws, { t: "invalid-room" }); ws.close(); return; }
   const members = rooms.get(room)!;
-  if (members.size >= MAX_PLAYERS) { send(ws, { t: "full" }); ws.close(); return; }
+  if (players.size >= MAX_PLAYERS || members.size >= MAX_PLAYERS) { send(ws, { t: "full" }); ws.close(); return; }
   const pl: Player = {
     id: nextId++, name: "Pilote", ws, room, model: 0, p: [0, 300, 0], q: [0, 0, 0, 1],
     hp: 100, kills: 0, deaths: 0, lastShots: {}, lastMsg: 0, msgs: 0,
@@ -101,7 +100,7 @@ wss.on("connection", (ws, request) => {
         break;
       case "chat": {
         const text = String(m.text ?? "").slice(0, 120).trim();
-        if (text) broadcast({ t: "chat", name: pl.name, text });
+        if (text) broadcastRoom(room, { t: "chat", name: pl.name, text });
         break;
       }
       case "shoot": {
