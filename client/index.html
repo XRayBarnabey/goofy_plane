@@ -46,6 +46,12 @@ button{touch-action:none;-webkit-touch-callout:none;user-select:none;-webkit-use
 body.touch-controls-active #minimap{top:170px;bottom:auto}
 .hud-button{position:fixed;top:48px;padding:6px 9px;border:1px solid rgba(255,255,255,.55);border-radius:8px;background:rgba(0,0,0,.4);color:white;font:12px sans-serif}
 #minimap-toggle{right:12px}
+#pause{left:10px;top:auto;bottom:80px}
+#respawn-btn{left:70px;top:auto;bottom:80px}
+#pause-menu{display:none;position:fixed;inset:0;z-index:9;align-items:center;justify-content:center;background:rgba(5,15,35,.7)}
+#pause-box{display:flex;flex-direction:column;gap:12px;background:rgba(15,25,45,.9);border:1px solid rgba(255,255,255,.2);border-radius:16px;padding:22px;min-width:240px}
+#pause-box button{font:inherit;padding:10px;border-radius:10px;border:1px solid rgba(255,255,255,.25);background:rgba(255,255,255,.1);color:#fff}
+#recenter{display:none}
 #fullscreen{right:92px}
 .player-pointer{position:fixed;z-index:2;pointer-events:none;display:none;color:#fff;text-shadow:0 1px 3px #000;font:12px monospace;white-space:nowrap}
 .player-pointer i{display:block;width:0;height:0;border-top:9px solid transparent;border-bottom:9px solid transparent;border-left:14px solid var(--player-color);filter:drop-shadow(0 0 2px #000)}
@@ -62,8 +68,10 @@ input,textarea{user-select:text;-webkit-user-select:text}
 <div id="room-status"></div>
 <div id="help">&amp; : mitrailleuse · é : roquettes · Espace : tirer · V : changer de vue · Entrée : chat</div>
 <details><summary>Touches — cliquer pour modifier</summary><div id="keybinds"></div></details></div></div>
-<div id="touch"><button id="t-fire">Feu</button><button id="t-up">Gaz +</button><button id="t-down">Gaz −</button><button id="t-weapon">Arme</button><button id="t-cam">Vue</button></div>
+<div id="touch"><button id="t-fire">Feu</button><button id="t-up">Gaz +</button><button id="t-down">Gaz −</button><button id="t-weapon">Arme</button><button id="t-cam">Vue</button><button id="t-recenter" style="right:24px;top:160px;font-size:11px">Recentrer</button></div>
 <div id="hud"></div><div id="health"><div id="health-fill"></div></div><div id="room-display"></div><div id="board"></div><div id="feed"></div><div id="cross"></div>
+<button id="pause" class="hud-button">⏸ Pause</button><button id="respawn-btn" class="hud-button">↺ Respawn</button>
+<div id="pause-menu"><div id="pause-box"><h2 style="margin:0;text-align:center">Pause</h2><label class="field">Volume <input id="volume" type="range" min="0" max="100" value="80"></label><button id="resume">Reprendre</button><button id="respawn-menu">Respawn</button><button id="recenter">Recentrer le gyroscope</button></div></div>
 <button id="fullscreen" class="hud-button">Plein écran</button><button id="minimap-toggle" class="hud-button">Minimap : oui</button><canvas id="minimap"></canvas>
 <input id="chat" maxlength="120" placeholder="Message…">
 <script type="module" src="/src/main.ts"></script></body></html>

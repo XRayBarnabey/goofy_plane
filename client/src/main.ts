@@ -1,6 +1,6 @@
 import * as THREE from "three";
 import { Terrain, TerrainView } from "./terrain";
-import { makePlane, makeLabel } from "./plane";
+import { makePlane, makeLabel, Trail } from "./plane";
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 const renderer = new THREE.WebGLRenderer({ antialias: true });
@@ -30,7 +30,7 @@ const GRAVITY = 9.8;
 let stallMsg = 0, buildingCrashMsg = 0;
 const upv = new THREE.Vector3(), rightv = new THREE.Vector3(), yAxis = new THREE.Vector3(0, 1, 0);
 let hp = 100, kills = 0, deaths = 0, crashedUntil = 0;
-interface Remote { mesh: THREE.Group; tp: THREE.Vector3; tq: THREE.Quaternion; name: string; label: THREE.Sprite; model: number; color: number; pointer: HTMLDivElement }
+interface Remote { mesh: THREE.Group; tp: THREE.Vector3; tq: THREE.Quaternion; name: string; label: THREE.Sprite; model: number; color: number; pointer: HTMLDivElement; trail: Trail; engine: OscillatorNode | null; engineGain: GainNode | null }
 const remotes = new Map<number, Remote>();
 const names = new Map<number, string>();
 const minimap = $<HTMLCanvasElement>("minimap");
@@ -39,6 +39,26 @@ minimap.style.display = "none";
 let audio: AudioContext | null = null;
 let engine: OscillatorNode | null = null;
 let engineGain: GainNode | null = null;
+let master: GainNode | null = null;
+let volume = 0.8;
+try { const v = localStorage.getItem("goofy-plane-volume"); if (v !== null && !isNaN(Number(v))) volume = Math.max(0, Math.min(1, Number(v))); } catch { /* ignore */ }
+let paused = false;
+const myTrail = new Trail(myColor); scene.add(myTrail.line);
+const TAIL = new THREE.Vector3(0, 0, 3.4);
+const HEAR_RANGE = 1200;
+function engineType(model: number): OscillatorType { return model === 0 ? "triangle" : model === 1 ? "sawtooth" : "square"; }
+function engineFreq(model: number, throttle: number, speed: number) { return (model === 1 ? 52 : model === 2 ? 34 : 42) + throttle * 30 + speed * 0.12; }
+function proximity(pos: THREE.Vector3) { const d = pos.distanceTo(me.position); return d >= HEAR_RANGE ? 0 : (1 - d / HEAR_RANGE) ** 2; }
+function startRemoteEngine(r: Remote) {
+  if (!audio || !master || r.engine) return;
+  r.engine = audio.createOscillator(); r.engine.type = engineType(r.model);
+  r.engineGain = audio.createGain(); r.engineGain.gain.value = 0;
+  r.engine.connect(r.engineGain).connect(master); r.engine.start();
+}
+function stopRemoteEngine(r: Remote) {
+  try { r.engine?.stop(); } catch { /* ignore */ }
+  r.engine?.disconnect(); r.engineGain?.disconnect(); r.engine = null; r.engineGain = null;
+}
 const keys = new Set<string>();
 const tracers: { m: THREE.Mesh; life: number; v: THREE.Vector3 }[] = [];
 type Action = "toggleView" | "pitchUp" | "pitchDown" | "rollLeft" | "rollRight" | "yawLeft" | "yawRight" | "throttleUp" | "throttleDown" | "fire";
@@ -59,33 +79,36 @@ let bindingAction: Action | null = null;
 let weapon: "gun" | "rocket" = "gun";
 
 function startAudio() {
-  if (audio) { void audio.resume(); return; }
+  if (audio) { void audio.resume(); for (const r of remotes.values()) startRemoteEngine(r); return; }
   const AudioCtor = window.AudioContext ?? (window as any).webkitAudioContext;
   if (!AudioCtor) return;
   audio = new AudioCtor();
   engine = audio.createOscillator();
-  engine.type = selectedModel === 0 ? "triangle" : selectedModel === 1 ? "sawtooth" : "square";
+  engine.type = engineType(selectedModel);
+  master = audio.createGain(); master.gain.value = volume; master.connect(audio.destination);
   engineGain = audio.createGain();
-  engineGain.gain.value = 0.012;
-  engine.connect(engineGain).connect(audio.destination);
+  engineGain.gain.value = 0.06;
+  engine.connect(engineGain).connect(master);
   engine.start();
 }
-function playShotSound(type: "gun" | "rocket") {
-  if (!audio) return;
+function playShotSound(type: "gun" | "rocket", at?: THREE.Vector3) {
+  if (!audio || !master) return;
+  const prox = at ? proximity(at) : 1;
+  if (prox <= 0.001) return;
   const oscillator = audio.createOscillator(), gain = audio.createGain(), now = audio.currentTime;
   oscillator.type = type === "gun" ? "square" : "sawtooth";
   oscillator.frequency.setValueAtTime(type === "gun" ? 520 : 180, now);
   oscillator.frequency.exponentialRampToValueAtTime(type === "gun" ? 110 : 45, now + (type === "gun" ? 0.09 : 0.42));
-  gain.gain.setValueAtTime(type === "gun" ? 0.045 : 0.075, now);
+  gain.gain.setValueAtTime((type === "gun" ? 0.12 : 0.2) * prox, now);
   gain.gain.exponentialRampToValueAtTime(0.001, now + (type === "gun" ? 0.1 : 0.45));
-  oscillator.connect(gain).connect(audio.destination);
+  oscillator.connect(gain).connect(master);
   oscillator.start(now); oscillator.stop(now + (type === "gun" ? 0.11 : 0.46));
 }
 
 function respawn() {
   const x = (Math.random() - 0.5) * 2000, z = (Math.random() - 0.5) * 2000;
   me.position.set(x, Math.max(terrain?.height(x, z) ?? 0, 0) + 250, z);
-  me.quaternion.identity(); vel.speed = 70; vel.throttle = 0.5; vel.vy = 0; hp = 100;
+  me.quaternion.identity(); myTrail.reset(); vel.speed = 70; vel.throttle = 0.5; vel.vy = 0; hp = 100;
 }
 function feed(text: string) {
   const d = document.createElement("div"); d.textContent = text; $("feed").append(d);
@@ -118,9 +141,9 @@ function connect(name: string, roomCode?: string) {
         feed("Code de partie introuvable");
         break;
       case "join": names.set(m.id, m.name); { const r = remotes.get(m.id); if (r) setName(r, m.name); } break;
-      case "leave": { const r = remotes.get(m.id); if (r) { scene.remove(r.mesh); r.pointer.remove(); remotes.delete(m.id); } names.delete(m.id); } break;
+      case "leave": { const r = remotes.get(m.id); if (r) { scene.remove(r.mesh); r.pointer.remove(); r.trail.dispose(); stopRemoteEngine(r); remotes.delete(m.id); } names.delete(m.id); } break;
       case "chat": feed(`${m.name}: ${m.text}`); break;
-      case "shot": if (m.id !== myId) { shoot(new THREE.Vector3(...(m.o as [number, number, number])), new THREE.Vector3(...(m.d as [number, number, number])), m.weapon); playShotSound(m.weapon); } break;
+      case "shot": if (m.id !== myId) { const o = new THREE.Vector3(...(m.o as [number, number, number])); shoot(o, new THREE.Vector3(...(m.d as [number, number, number])), m.weapon); playShotSound(m.weapon, o); } break;
       case "hit": hp = m.hp; break;
       case "kill":
         feed(`💥 ${m.killer} a abattu ${m.victim}`);
@@ -138,11 +161,13 @@ function connect(name: string, roomCode?: string) {
             const mesh = makePlane(p.c ?? 0x1e88e5, p.model ?? 0); scene.add(mesh);
             const pointer = document.createElement("div"); pointer.className = "player-pointer";
             pointer.append(document.createElement("i"), document.createElement("span")); document.body.append(pointer);
-            r = { mesh, tp: new THREE.Vector3(), tq: new THREE.Quaternion(), name: "", label: null as any, model: p.model ?? 0, color: p.c ?? 0x1e88e5, pointer };
+            r = { mesh, tp: new THREE.Vector3(), tq: new THREE.Quaternion(), name: "", label: null as any, model: p.model ?? 0, color: p.c ?? 0x1e88e5, pointer, trail: new Trail(p.c ?? 0x1e88e5), engine: null, engineGain: null };
+            scene.add(r.trail.line); startRemoteEngine(r);
             setName(r, names.get(p.id) ?? p.n); remotes.set(p.id, r);
             mesh.position.set(p.p[0], p.p[1], p.p[2]);
           } else if (r.model !== (p.model ?? 0) || r.color !== (p.c ?? 0x1e88e5)) {
-            const mesh = makePlane(p.c ?? 0x1e88e5, p.model ?? 0); r.color = p.c ?? 0x1e88e5;
+            const mesh = makePlane(p.c ?? 0x1e88e5, p.model ?? 0); r.color = p.c ?? 0x1e88e5; r.trail.setColor(r.color);
+            if (r.engine) r.engine.type = engineType(p.model ?? 0);
             mesh.position.copy(r.mesh.position); mesh.quaternion.copy(r.mesh.quaternion);
             scene.remove(r.mesh); r.mesh = mesh; r.model = p.model ?? 0; scene.add(mesh); setName(r, r.name);
           }
@@ -201,6 +226,8 @@ addEventListener("keydown", (e) => {
   }
   if (e.key === "Enter" && terrain) { chat.style.display = "block"; chat.focus(); e.preventDefault(); return; }
   if (e.code === bindings.toggleView && !e.repeat) toggleView();
+  if (e.code === "KeyP" && !e.repeat) setPaused(!paused);
+  if (e.code === "KeyR" && !e.repeat && terrain) respawn();
   if (e.code === "Digit1" || e.code === "Digit2") {
     weapon = e.code === "Digit1" ? "gun" : "rocket";
     feed(weapon === "gun" ? "Arme : mitrailleuse" : "Arme : roquettes");
@@ -234,6 +261,29 @@ $<HTMLButtonElement>("minimap-toggle").onclick = () => {
   $("minimap-toggle").textContent = `Minimap : ${showMinimap ? "oui" : "non"}`;
 };
 function toggleView() { firstPerson = !firstPerson; feed(firstPerson ? "Vue : 1ère personne" : "Vue : 3ème personne"); }
+function recenterGyro() {
+  touchMode.neutral = null; touchMode.tilt.lr = 0; touchMode.tilt.fb = 0;
+  fwd.set(0, 0, -1).applyQuaternion(me.quaternion);
+  const yaw = Math.atan2(-fwd.x, -fwd.z);
+  me.quaternion.setFromAxisAngle(yAxis, yaw);
+  feed("Gyroscope recentré, avion remis droit");
+}
+function setPaused(p: boolean) {
+  if (!terrain) return;
+  paused = p; $("pause-menu").style.display = p ? "flex" : "none";
+  if (!p) clock.getDelta();
+}
+$("pause").onclick = () => setPaused(!paused);
+$("resume").onclick = () => setPaused(false);
+$("respawn-btn").onclick = () => { if (terrain) respawn(); };
+$("respawn-menu").onclick = () => { respawn(); setPaused(false); };
+$("recenter").onclick = () => { recenterGyro(); setPaused(false); };
+$<HTMLInputElement>("volume").value = String(Math.round(volume * 100));
+$<HTMLInputElement>("volume").addEventListener("input", (e) => {
+  volume = Number((e.currentTarget as HTMLInputElement).value) / 100;
+  if (master) master.gain.value = volume;
+  try { localStorage.setItem("goofy-plane-volume", String(volume)); } catch { /* ignore */ }
+});
 function enableTouch() {
   $("touch").style.display = "block";
   const hold = (id: string, on: () => void, off: () => void) => {
@@ -257,7 +307,9 @@ function enableTouch() {
   const DOE = (window as any).DeviceOrientationEvent;
   if (DOE && typeof DOE.requestPermission === "function") DOE.requestPermission().then((r: string) => { if (r === "granted") start(); }).catch(() => feed("Gyroscope refusé"));
   else start();
-  $("t-cam").addEventListener("dblclick", () => (touchMode.neutral = null));
+  $("t-cam").addEventListener("dblclick", recenterGyro);
+  $("t-recenter").addEventListener("click", recenterGyro);
+  $("recenter").style.display = "block";
   feed("Gyroscope : inclinez le téléphone (double-tap Vue pour recalibrer)");
 }
 const k = (action: Action) => keys.has(bindings[action]);
@@ -272,7 +324,7 @@ function startGame(roomCode?: string) {
   document.body.classList.toggle("touch-controls-active", touchMode.on);
   startAudio();
   if (touchMode.on) enableTouch();
-  scene.remove(me); me = makePlane(myColor, selectedModel); scene.add(me);
+  scene.remove(me); me = makePlane(myColor, selectedModel); scene.add(me); myTrail.setColor(myColor); myTrail.reset();
   $("menu").style.display = "none";
   connect(name, roomCode);
 }
@@ -295,7 +347,7 @@ const mapContext = minimap.getContext("2d");
 function loop() {
   requestAnimationFrame(loop);
   const dt = Math.min(clock.getDelta(), 0.1), now = performance.now();
-  if (terrain && tview) {
+  if (terrain && tview && !paused) {
     const rot = (axis: [number, number, number], a: number) => { ax.set(...axis); me.quaternion.multiply(qd.setFromAxisAngle(ax, a)); };
     if (now > crashedUntil) {
       const dz = (v: number) => Math.abs(v) < 4 ? 0 : Math.max(-1, Math.min(1, (v - Math.sign(v) * 4) / 25));
@@ -361,6 +413,7 @@ function loop() {
         vel.speed = Math.max(8, vel.speed * 0.8);
       }
     }
+    myTrail.update(dt, me, TAIL);
     (me.getObjectByName("prop") as THREE.Object3D).rotation.z += dt * 40;
     tview.update(me.position.x, me.position.z);
     me.visible = !firstPerson;
@@ -387,6 +440,11 @@ function loop() {
   camera.updateMatrixWorld();
   for (const r of remotes.values()) {
     r.mesh.position.lerp(r.tp, Math.min(1, dt * 12)); r.mesh.quaternion.slerp(r.tq, Math.min(1, dt * 12));
+    if (!paused) r.trail.update(dt, r.mesh, TAIL);
+    if (r.engineGain && r.engine && audio) {
+      r.engineGain.gain.setTargetAtTime(0.06 * proximity(r.mesh.position), audio.currentTime, 0.1);
+      r.engine.frequency.setTargetAtTime(engineFreq(r.model, 0.6, 60), audio.currentTime, 0.1);
+    }
     const projected = r.mesh.position.clone().project(camera);
     const local = r.mesh.position.clone().sub(camera.position).applyQuaternion(camera.quaternion.clone().invert());
     if (local.z > 0) { projected.x = -projected.x; projected.y = -projected.y; }
@@ -414,7 +472,7 @@ function loop() {
     mapContext.fillStyle = `#${myColor.toString(16).padStart(6, "0")}`;
     mapContext.beginPath(); mapContext.moveTo(0, -8); mapContext.lineTo(6, 7); mapContext.lineTo(0, 4); mapContext.lineTo(-6, 7); mapContext.closePath(); mapContext.fill(); mapContext.restore();
   }
-  if (engine && audio) engine.frequency.setTargetAtTime((selectedModel === 1 ? 52 : selectedModel === 2 ? 34 : 42) + vel.throttle * 30 + vel.speed * 0.12, audio.currentTime, 0.08);
+  if (engine && audio) engine.frequency.setTargetAtTime(engineFreq(selectedModel, vel.throttle, vel.speed), audio.currentTime, 0.08);
   for (let i = tracers.length - 1; i >= 0; i--) {
     const t = tracers[i]; t.m.position.addScaledVector(t.v, dt);
     if ((t.life -= dt) <= 0) { scene.remove(t.m); tracers.splice(i, 1); }
