@@ -36,7 +36,9 @@ export class Terrain {
     for (let i = 0; i < 5; i++) { h += this.noise(x * f, z * f) * amp; sum += amp; amp *= 0.5; f *= 2; }
     h = h / sum;
     const m = Math.max(0, h + 0.1);
-    return h < -0.05 ? h * 120 : m * m * 1400 - 6;
+    const naturalHeight = h < -0.05 ? h * 120 : m * m * 1400 - 6;
+    const cityBlend = Math.min(1, Math.max(0, (Math.hypot(x, z) - 650) / 500));
+    return 25 * (1 - cityBlend) + naturalHeight * cityBlend;
   }
 }
 
@@ -48,12 +50,56 @@ export class TerrainView {
   private mat = new THREE.MeshLambertMaterial({ vertexColors: true, flatShading: true });
   constructor(private t: Terrain, scene: THREE.Scene) {
     scene.add(this.group);
+    this.addCity();
     const water = new THREE.Mesh(new THREE.PlaneGeometry(40000, 40000).rotateX(-Math.PI / 2),
       new THREE.MeshLambertMaterial({ color: 0x1f6fb5, transparent: true, opacity: 0.85 }));
     water.position.y = WATER_LEVEL;
     this.water = water; scene.add(water);
   }
   private water: THREE.Mesh;
+  private addCity() {
+    const city = new THREE.Group();
+    const asphalt = new THREE.MeshLambertMaterial({ color: 0x333b43 });
+    const markings = new THREE.MeshLambertMaterial({ color: 0xe6d16a });
+    const ground = new THREE.Mesh(new THREE.PlaneGeometry(1800, 1800).rotateX(-Math.PI / 2), asphalt);
+    ground.position.y = 25.1;
+    city.add(ground);
+    for (let i = -5; i <= 5; i++) {
+      const road = new THREE.Mesh(new THREE.PlaneGeometry(1800, 24).rotateX(-Math.PI / 2), asphalt);
+      road.position.set(i * 150, 25.2, 0);
+      city.add(road);
+      const crossRoad = road.clone();
+      crossRoad.rotation.y = Math.PI / 2;
+      crossRoad.position.set(0, 25.2, i * 150);
+      city.add(crossRoad);
+      const dash = new THREE.Mesh(new THREE.BoxGeometry(2, 0.12, 32), markings);
+      dash.position.set(i * 150, 25.35, 0);
+      city.add(dash);
+    }
+    const facadeColors = [0x777b83, 0xb49c82, 0x657985, 0xaaa9a2, 0x68706e];
+    const windowsMaterial = new THREE.MeshLambertMaterial({ color: 0x476c80 });
+    for (let ix = -5; ix <= 5; ix++) for (let iz = -5; iz <= 5; iz++) {
+      const x = ix * 150 + ((ix * 37 + iz * 19) % 23);
+      const z = iz * 150 + ((iz * 29 + ix * 11) % 23);
+      const width = 48 + Math.abs((ix * 7 + iz * 13) % 28);
+      const depth = 48 + Math.abs((ix * 11 + iz * 5) % 28);
+      const floors = 3 + Math.abs((ix * 17 + iz * 23) % 10);
+      const height = floors * 8;
+      const building = new THREE.Mesh(
+        new THREE.BoxGeometry(width, height, depth),
+        new THREE.MeshLambertMaterial({ color: facadeColors[Math.abs(ix * 3 + iz * 7) % facadeColors.length] }),
+      );
+      building.position.set(x, 25 + height / 2, z);
+      city.add(building);
+      const frontWindows = new THREE.Mesh(new THREE.BoxGeometry(width * 0.68, height * 0.72, 0.3), windowsMaterial);
+      frontWindows.position.set(x, building.position.y, z - depth / 2 - 0.2);
+      city.add(frontWindows);
+      const sideWindows = new THREE.Mesh(new THREE.BoxGeometry(0.3, height * 0.72, depth * 0.68), windowsMaterial);
+      sideWindows.position.set(x + width / 2 + 0.2, building.position.y, z);
+      city.add(sideWindows);
+    }
+    this.group.add(city);
+  }
   private build(cx: number, cz: number) {
     const g = new THREE.PlaneGeometry(SIZE, SIZE, SEGS, SEGS).rotateX(-Math.PI / 2);
     const pos = g.attributes.position, col = new Float32Array(pos.count * 3), c = new THREE.Color();
