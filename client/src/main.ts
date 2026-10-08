@@ -67,7 +67,7 @@ function stopRemoteEngine(r: Remote) {
   r.engine?.disconnect(); r.engineGain?.disconnect(); r.engine = null; r.engineGain = null;
 }
 const keys = new Set<string>();
-const tracers: { m: THREE.Mesh; life: number; v: THREE.Vector3; boom?: boolean; mine?: boolean }[] = [];
+const tracers: { m: THREE.Object3D; life: number; v: THREE.Vector3; boom?: boolean; mine?: boolean; kind: number; smoke: number }[] = [];
 const blasts: { m: THREE.Mesh; t: number }[] = [];
 type Action = "toggleView" | "pitchUp" | "pitchDown" | "rollLeft" | "rollRight" | "yawLeft" | "yawRight" | "throttleUp" | "throttleDown" | "fire"
   | "gForward" | "gBack" | "gLeft" | "gRight" | "gTurnLeft" | "gTurnRight" | "gLookUp" | "gLookDown" | "gJump" | "gFire" | "gRocket" | "gSwatter";
@@ -75,13 +75,13 @@ const defaults: Record<Action, string> = {
   toggleView: "KeyV",
   // AZERTY : KeyW = Z, KeyA = Q, KeyQ = A (codes physiques)
   pitchUp: "KeyW", pitchDown: "KeyS", rollLeft: "KeyA", rollRight: "KeyD",
-  yawLeft: "KeyQ", yawRight: "KeyE", throttleUp: "ShiftLeft", throttleDown: "ControlLeft", fire: "Space",
+  yawLeft: "KeyQ", yawRight: "KeyE", throttleUp: "ShiftLeft", throttleDown: "ControlLeft", fire: "KeyF",
   gForward: "KeyW", gBack: "KeyS", gLeft: "KeyA", gRight: "KeyD", gTurnLeft: "KeyQ", gTurnRight: "KeyE",
-  gLookUp: "ArrowUp", gLookDown: "ArrowDown", gJump: "Space", gFire: "KeyF", gRocket: "Digit1", gSwatter: "Digit2",
+  gLookUp: "ArrowUp", gLookDown: "ArrowDown", gJump: "ShiftLeft", gFire: "KeyF", gRocket: "Digit1", gSwatter: "Digit2",
 };
 const bindings: Record<Action, string> = { ...defaults };
 try {
-  const saved = JSON.parse(localStorage.getItem("goofy-plane-controls-azerty") ?? "{}");
+  const saved = JSON.parse(localStorage.getItem("goofy-plane-controls-v2") ?? "{}");
   for (const action of Object.keys(defaults) as Action[]) {
     if (typeof saved[action] === "string") bindings[action] = saved[action];
   }
@@ -141,12 +141,55 @@ function feed(text: string) {
   const d = document.createElement("div"); d.textContent = text; $("feed").append(d);
   setTimeout(() => d.remove(), 8000);
 }
+const bulletMat = new THREE.MeshBasicMaterial({ color: 0xfff6b0 });
+const bulletGlowMat = new THREE.MeshBasicMaterial({ color: 0xffb020, transparent: true, opacity: 0.45, blending: THREE.AdditiveBlending, depthWrite: false });
+const bulletGeo = new THREE.CylinderGeometry(0.12, 0.12, 3.2, 6).rotateX(Math.PI / 2);
+const bulletGlowGeo = new THREE.CylinderGeometry(0.4, 0.4, 4, 8).rotateX(Math.PI / 2);
+const rocketBodyGeo = new THREE.CylinderGeometry(0.5, 0.5, 4, 10).rotateX(Math.PI / 2);
+const rocketNoseGeo = new THREE.ConeGeometry(0.5, 1.8, 10).rotateX(Math.PI / 2);
+const rocketBandGeo = new THREE.CylinderGeometry(0.53, 0.53, 0.5, 10).rotateX(Math.PI / 2);
+const rocketFinGeo = new THREE.BoxGeometry(0.1, 1.3, 1.1);
+const rocketNozzleGeo = new THREE.CylinderGeometry(0.4, 0.3, 0.5, 10).rotateX(Math.PI / 2);
+const rocketFlameGeo = new THREE.ConeGeometry(0.4, 2.4, 8).rotateX(-Math.PI / 2);
+const rocketMat = new THREE.MeshLambertMaterial({ color: 0xd8dde2 });
+const rocketNoseMat = new THREE.MeshLambertMaterial({ color: 0xd8392f });
+const rocketFinMat = new THREE.MeshLambertMaterial({ color: 0x3a4048 });
+const flameMat = new THREE.MeshBasicMaterial({ color: 0xffa030, transparent: true, opacity: 0.9, blending: THREE.AdditiveBlending, depthWrite: false });
+function makeProjectile(type: Weapon, big: boolean) {
+  const g = new THREE.Group();
+  if (type === "gun") {
+    g.add(new THREE.Mesh(bulletGeo, bulletMat), new THREE.Mesh(bulletGlowGeo, bulletGlowMat));
+    return g;
+  }
+  const add = (geo: THREE.BufferGeometry, mat: THREE.Material, z: number, rz = 0, x = 0, y = 0) => { const m = new THREE.Mesh(geo, mat); m.position.set(x, y, z); m.rotation.z = rz; g.add(m); return m; };
+  add(rocketBodyGeo, rocketMat, 0); add(rocketNoseGeo, rocketNoseMat, 2.9); add(rocketBandGeo, rocketNoseMat, 1.4); add(rocketNozzleGeo, rocketFinMat, -2.2);
+  for (let i = 0; i < 4; i++) { const a = (i * Math.PI) / 2; add(rocketFinGeo, rocketFinMat, -1.5, a, Math.sin(a) * -0.9, Math.cos(a) * 0.9); }
+  const flame = add(rocketFlameGeo, flameMat, -3.4); flame.name = "flame";
+  g.scale.setScalar(big ? 3 : 1);
+  return g;
+}
+const smokeTexture = (() => {
+  const c = document.createElement("canvas"); c.width = c.height = 64;
+  const x = c.getContext("2d")!, gr = x.createRadialGradient(32, 32, 2, 32, 32, 31);
+  gr.addColorStop(0, "rgba(255,255,255,0.9)"); gr.addColorStop(0.5, "rgba(255,255,255,0.4)"); gr.addColorStop(1, "rgba(255,255,255,0)");
+  x.fillStyle = gr; x.fillRect(0, 0, 64, 64);
+  return new THREE.CanvasTexture(c);
+})();
+const puffs: { s: THREE.Sprite; t: number; life: number; size: number; grow: number; rise: number; op: number }[] = [];
+const MAX_PUFFS = 700;
+function spawnPuff(p: THREE.Vector3, size: number, life: number, grow: number, color: number, opacity = 0.55) {
+  if (puffs.length >= MAX_PUFFS) { const o = puffs.shift()!; scene.remove(o.s); (o.s.material as THREE.Material).dispose(); }
+  const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: smokeTexture, color, transparent: true, opacity, depthWrite: false }));
+  s.position.copy(p).add(tmpV.set((Math.random() - 0.5) * size * 0.3, (Math.random() - 0.5) * size * 0.3, (Math.random() - 0.5) * size * 0.3));
+  s.scale.setScalar(size); scene.add(s);
+  puffs.push({ s, t: 0, life, size, grow, rise: 1 + Math.random() * 2, op: opacity });
+}
 function shoot(o: THREE.Vector3, d: THREE.Vector3, type: Weapon = "gun", mine = false) {
   if (type === "swat") return;
   const rocket = type === "rocket", big = type === "grocket";
-  const m = new THREE.Mesh(new THREE.SphereGeometry(big ? 3 : rocket ? 1.5 : 0.6), new THREE.MeshBasicMaterial({ color: big || rocket ? 0xff7138 : 0xffee55 }));
-  m.position.copy(o); scene.add(m);
-  tracers.push({ m, life: big ? 3 : rocket ? 2 : 1.5, v: d.clone().multiplyScalar(big ? 260 : rocket ? 240 : 400), boom: big, mine });
+  const m = makeProjectile(type, big);
+  m.position.copy(o); m.lookAt(o.clone().add(d)); scene.add(m);
+  tracers.push({ m, life: big ? 3 : rocket ? 2 : 1.5, v: d.clone().multiplyScalar(big ? 260 : rocket ? 240 : 400), boom: big, mine, kind: big ? 2 : rocket ? 1 : 0, smoke: 0 });
 }
 const BLAST_RADIUS = 110, BLAST_FORCE = 130;
 function explode(p: THREE.Vector3, mine: boolean) {
@@ -180,6 +223,7 @@ function connect(name: string, roomCode?: string) {
         feed(`Partie ${m.room} créée ou rejointe`);
         break;
       case "invalid-room":
+        document.exitPointerLock?.();
         $("room-status").textContent = "Code de partie introuvable";
         $("menu").style.display = "flex";
         feed("Code de partie introuvable");
@@ -198,7 +242,7 @@ function connect(name: string, roomCode?: string) {
         feed(`💥 ${m.killer} a abattu ${m.victim}`);
         if (m.victimId === myId) { deaths++; respawn(); }
         break;
-      case "full": $("room-status").textContent = "Serveur plein"; $("menu").style.display = "flex"; break;
+      case "full": document.exitPointerLock?.(); $("room-status").textContent = "Serveur plein"; $("menu").style.display = "flex"; break;
       case "snap": {
         const rows: string[] = [];
         for (const p of m.players) {
@@ -241,10 +285,10 @@ const chat = $<HTMLInputElement>("chat");
 const actionLabels: Record<Action, string> = {
   pitchUp: "Piquer / cabrer haut", pitchDown: "Cabrer bas", rollLeft: "Roulis gauche", rollRight: "Roulis droite",
   yawLeft: "Lacet gauche", yawRight: "Lacet droite", throttleUp: "Augmenter les gaz",
-  throttleDown: "Réduire les gaz", fire: "Tirer", toggleView: "Changer de vue (1ère/3ème)",
+  throttleDown: "Réduire les gaz", fire: "Tirer (en plus du clic gauche)", toggleView: "Changer de vue (1ère/3ème)",
   gForward: "Géant : avancer", gBack: "Géant : reculer", gLeft: "Géant : pas à gauche", gRight: "Géant : pas à droite",
   gTurnLeft: "Géant : tourner à gauche", gTurnRight: "Géant : tourner à droite", gLookUp: "Géant : viser en haut", gLookDown: "Géant : viser en bas",
-  gJump: "Géant : sauter", gFire: "Géant : tirer / frapper", gRocket: "Géant : lance-roquettes", gSwatter: "Géant : tapette à mouches",
+  gJump: "Géant : sauter", gFire: "Géant : tirer / frapper (en plus du clic gauche)", gRocket: "Géant : lance-roquettes", gSwatter: "Géant : tapette à mouches",
 };
 const keybinds = $("keybinds");
 function keyLabel(code: string) {
@@ -269,16 +313,17 @@ addEventListener("keydown", (e) => {
     if (e.code === "Escape") bindingAction = null;
     else {
       bindings[bindingAction] = e.code;
-      localStorage.setItem("goofy-plane-controls-azerty", JSON.stringify(bindings));
+      localStorage.setItem("goofy-plane-controls-v2", JSON.stringify(bindings));
       bindingAction = null;
     }
     renderBindings(); e.preventDefault(); return;
   }
   if (document.activeElement === chat) {
-    if (e.key === "Enter") { if (chat.value) ws?.send(JSON.stringify({ t: "chat", text: chat.value })); chat.value = ""; chat.style.display = "none"; chat.blur(); }
+    if (e.key === "Enter") { if (chat.value) ws?.send(JSON.stringify({ t: "chat", text: chat.value })); chat.value = ""; chat.style.display = "none"; chat.blur(); lockMouse(); }
     return;
   }
-  if (e.key === "Enter" && terrain) { chat.style.display = "block"; chat.focus(); e.preventDefault(); return; }
+  if (e.key === "Enter" && terrain) { chat.style.display = "block"; document.exitPointerLock?.(); chat.focus(); e.preventDefault(); return; }
+  if (e.code === "Space" && terrain && !e.repeat) { setPaused(!paused); e.preventDefault(); return; }
   if (e.code === bindings.toggleView && !e.repeat) toggleView();
   if (e.code === "KeyP" && !e.repeat) setPaused(!paused);
   if (e.code === "KeyR" && !e.repeat && terrain) respawn();
@@ -329,13 +374,43 @@ function recenterGyro() {
   me.quaternion.setFromAxisAngle(yAxis, yaw);
   feed("Gyroscope recentré, avion remis droit");
 }
+const canvasEl = renderer.domElement;
+const mouse = { dx: 0, dy: 0, down: false, sens: 1, wheel: 0 };
+try { const v = localStorage.getItem("goofy-plane-sens"); if (v !== null && !isNaN(Number(v))) mouse.sens = Math.max(0.2, Math.min(3, Number(v))); } catch { /* ignore */ }
+const mouseLocked = () => document.pointerLockElement === canvasEl;
+function lockMouse() {
+  if (touchMode.on || !terrain || paused || mouseLocked()) return;
+  try { const r = canvasEl.requestPointerLock() as unknown; if (r && typeof (r as Promise<void>).catch === "function") (r as Promise<void>).catch(() => { /* refusé : un clic dans le jeu réessaiera */ }); } catch { /* ignore */ }
+}
+document.addEventListener("pointerlockchange", () => {
+  if (!mouseLocked()) { mouse.down = false; if (terrain && !paused && $("menu").style.display === "none" && document.activeElement !== chat) setPaused(true); }
+});
+addEventListener("mousemove", (e) => { if (mouseLocked()) { mouse.dx += e.movementX; mouse.dy += e.movementY; } });
+addEventListener("mousedown", (e) => {
+  if (touchMode.on || !terrain || paused || $("menu").style.display !== "none") return;
+  if (!mouseLocked()) { lockMouse(); return; }
+  if (e.button === 0) mouse.down = true;
+  e.preventDefault();
+});
+addEventListener("mouseup", (e) => { if (e.button === 0) mouse.down = false; });
+addEventListener("wheel", (e) => {
+  if (!mouseLocked() || paused) return;
+  if (isGiant()) setGiantWeapon(giant.weapon === "grocket" ? "swat" : "grocket"); else mouse.wheel += Math.sign(e.deltaY);
+}, { passive: true });
 function setPaused(p: boolean) {
   if (!terrain) return;
   paused = p; $("pause-menu").style.display = p ? "flex" : "none";
-  if (!p) clock.getDelta();
+  mouse.down = false; mouse.dx = mouse.dy = mouse.wheel = 0;
+  if (p) document.exitPointerLock?.(); else { clock.getDelta(); lockMouse(); }
 }
 $("pause").onclick = () => setPaused(!paused);
 $("resume").onclick = () => setPaused(false);
+$("main-menu").onclick = () => location.reload();
+const sensInput = $<HTMLInputElement>("sens"); sensInput.value = String(Math.round(mouse.sens * 100));
+sensInput.addEventListener("input", () => {
+  mouse.sens = Number(sensInput.value) / 100;
+  try { localStorage.setItem("goofy-plane-sens", String(mouse.sens)); } catch { /* ignore */ }
+});
 $("respawn-btn").onclick = () => { if (terrain) respawn(); };
 $("respawn-menu").onclick = () => { respawn(); setPaused(false); };
 $("respawn-runway").onclick = () => { if (terrain && !isGiant()) { respawn(true); setPaused(false); } };
@@ -387,6 +462,15 @@ function giantBlocked(x: number, z: number, feetY: number) {
   return surfaceAt(x, z) > feetY + 8 || !!terrain!.hitsTree(tmpV.set(x, feetY + 5, z), 8);
 }
 const giantLook = new THREE.Vector3();
+const bodyHidden = new WeakMap<THREE.Object3D, boolean>();
+function giantHeld(g: THREE.Object3D) { return !!g.userData.parts; }
+function setGiantBodyVisible(g: THREE.Object3D, vis: boolean) {
+  if (bodyHidden.get(g) === !vis) return;
+  bodyHidden.set(g, !vis);
+  const parts = g.userData.parts as { launcher: THREE.Object3D; swatter: THREE.Object3D };
+  const isWeapon = (o: THREE.Object3D) => { for (let c: THREE.Object3D | null = o; c; c = c.parent) if (c === parts.launcher || c === parts.swatter) return true; return false; };
+  g.traverse((o: THREE.Object3D) => { if ((o as THREE.Mesh).isMesh && !isWeapon(o)) o.visible = vis; });
+}
 function giantStep(dt: number, now: number) {
   const up = k("gLookUp") ? 1 : k("gLookDown") ? -1 : 0;
   let fw = (k("gForward") ? 1 : 0) - (k("gBack") ? 1 : 0), st = (k("gRight") ? 1 : 0) - (k("gLeft") ? 1 : 0);
@@ -395,8 +479,10 @@ function giantStep(dt: number, now: number) {
     fw = fw || dz(touchMode.tilt.fb); turn = turn || dz(touchMode.tilt.lr); jump = jump || touchMode.throttleDir > 0;
     giant.pitch += (touchMode.throttleDir < 0 ? -1.5 : (-0.1 - giant.pitch) * 2) * dt;
   }
+  const MS = 0.0022 * mouse.sens;
+  giant.yaw -= Math.max(-0.5, Math.min(0.5, mouse.dx * MS)); const mdy = Math.max(-0.5, Math.min(0.5, mouse.dy * MS)); mouse.dx = mouse.dy = 0;
   giant.yaw += turn * 1.8 * dt;
-  giant.pitch = Math.max(-1.45, Math.min(1.2, giant.pitch + up * 1.5 * dt));
+  giant.pitch = Math.max(-1.45, Math.min(1.2, giant.pitch + up * 1.5 * dt - mdy));
   const sy = Math.sin(giant.yaw), cy = Math.cos(giant.yaw);
   let wx = -sy * fw + cy * st, wz = -cy * fw - sy * st;
   const wl = Math.hypot(wx, wz); if (wl > 1) { wx /= wl; wz /= wl; }
@@ -419,7 +505,7 @@ function giantStep(dt: number, now: number) {
   me.rotation.y = giant.yaw;
   const cp = Math.cos(giant.pitch);
   giantLook.set(-sy * cp, Math.sin(giant.pitch), -cy * cp);
-  const fire = k("gFire") || touchMode.fire;
+  const fire = k("gFire") || touchMode.fire || mouse.down;
   const delay = giant.weapon === "swat" ? 800 : 900;
   if (fire && now - giant.lastShot > delay && ws?.readyState === 1) {
     giant.lastShot = now;
@@ -477,10 +563,12 @@ function loop() {
       }
       // les gouvernes sont moins efficaces à basse vitesse
       const authority = Math.max(0.35, Math.min(1.1, vel.speed / 70));
-      rot([1, 0, 0], pitch * 1.1 * authority * dt);
-      rot([0, 0, 1], roll * 1.8 * authority * dt);
+      const MS = mouse.sens, mdx = Math.max(-0.2, Math.min(0.2, mouse.dx * 0.0035 * MS)), mdy = Math.max(-0.2, Math.min(0.2, mouse.dy * 0.0025 * MS));
+      mouse.dx = mouse.dy = 0;
+      rot([1, 0, 0], pitch * 1.1 * authority * dt + mdy * authority);
+      rot([0, 0, 1], roll * 1.8 * authority * dt - mdx * authority);
       rot([0, 1, 0], (yaw + touchMode.trim * 0.35) * (onGround ? 0.8 : 0.6) * authority * dt);
-      vel.throttle = Math.max(0, Math.min(1, vel.throttle + thr * 0.5 * dt));
+      vel.throttle = Math.max(0, Math.min(1, vel.throttle + thr * 0.5 * dt - mouse.wheel * 0.05)); mouse.wheel = 0;
       if (onGround) {
         // roulage : pas de roulis, le nez ne se lève qu'à la vitesse de rotation (≥ 50 m/s)
         fwd.set(0, 0, -1).applyQuaternion(me.quaternion);
@@ -533,7 +621,7 @@ function loop() {
       } else if (me.position.y < ground + 3) {
         feed("💥 Crash !"); ws?.send(JSON.stringify({ t: "died" })); deaths++; respawn(); crashedUntil = now + 500;
       }
-      const fire = k("fire") || touchMode.fire;
+      const fire = k("fire") || touchMode.fire || mouse.down;
       const fireDelay = weapon === "rocket" ? 700 : 100;
       if (fire && now - shootT > fireDelay && ws?.readyState === 1) {
         shootT = now;
@@ -566,7 +654,8 @@ function loop() {
     if (isGiant()) animateGiant(me, dt, Math.hypot(giant.vx, giant.vz), !giant.grounded);
     else { myTrail.update(dt, me, TAIL); (me.getObjectByName("prop") as THREE.Object3D).rotation.z += dt * 40; }
     tview.update(me.position.x, me.position.z);
-    me.visible = !firstPerson;
+    me.visible = !firstPerson || (isGiant() && giantHeld(me));
+    if (isGiant()) setGiantBodyVisible(me, !firstPerson);
     if (isGiant()) {
       const eye = tmp.set(0, GIANT_HEIGHT - 10, 0).add(me.position);
       if (firstPerson) {
@@ -644,9 +733,22 @@ function loop() {
   if (engine && audio) engine.frequency.setTargetAtTime(engineFreq(selectedModel, vel.throttle, vel.speed), audio.currentTime, 0.08);
   for (let i = tracers.length - 1; i >= 0; i--) {
     const t = tracers[i]; t.m.position.addScaledVector(t.v, dt);
+    t.smoke -= dt;
+    if (t.smoke <= 0) {
+      const back = tmp.copy(t.v).normalize().multiplyScalar(-(t.kind === 2 ? 9 : t.kind === 1 ? 3 : 1.5)).add(t.m.position);
+      if (t.kind === 0) { t.smoke = 0.025; spawnPuff(back, 1.6, 0.7, 2.5, 0xdddddd, 0.22); }
+      else { t.smoke = t.kind === 2 ? 0.02 : 0.03; spawnPuff(back, t.kind === 2 ? 8 : 3, t.kind === 2 ? 2.4 : 1.6, t.kind === 2 ? 14 : 5, 0xcfcfcf, 0.6); }
+    }
+    const flame = t.m.getObjectByName("flame"); if (flame) flame.scale.set(1, 1, 0.7 + Math.random() * 0.8);
     const hit = t.boom && terrain && (t.m.position.y <= surfaceAt(t.m.position.x, t.m.position.z) || terrain.hitsTree(t.m.position, 3));
     if (hit) { explode(t.m.position, !!t.mine); }
     if (hit || (t.life -= dt) <= 0) { scene.remove(t.m); tracers.splice(i, 1); }
+  }
+  for (let i = puffs.length - 1; i >= 0; i--) {
+    const p = puffs[i]; p.t += dt; const k = p.t / p.life;
+    if (k >= 1) { scene.remove(p.s); (p.s.material as THREE.Material).dispose(); puffs.splice(i, 1); continue; }
+    p.s.scale.setScalar(p.size + p.grow * k); p.s.position.y += p.rise * dt;
+    (p.s.material as THREE.SpriteMaterial).opacity = (1 - k) * (1 - k) * p.op;
   }
   for (let i = blasts.length - 1; i >= 0; i--) {
     const b = blasts[i]; b.t += dt; b.m.scale.setScalar(4 + b.t * 160); (b.m.material as THREE.MeshBasicMaterial).opacity = Math.max(0, 0.85 - b.t * 1.8);

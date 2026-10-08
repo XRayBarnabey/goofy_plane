@@ -51,6 +51,7 @@ body.touch-controls-active #minimap{top:170px;bottom:auto}
 #respawn-btn{left:70px;top:auto;bottom:80px}
 #pause-menu{display:none;position:fixed;inset:0;z-index:9;align-items:center;justify-content:center;background:rgba(5,15,35,.7)}
 #pause-box{display:flex;flex-direction:column;gap:12px;background:rgba(15,25,45,.9);border:1px solid rgba(255,255,255,.2);border-radius:16px;padding:22px;min-width:240px}
+#pause-box input[type=range]{width:100%}
 #pause-box button{font:inherit;padding:10px;border-radius:10px;border:1px solid rgba(255,255,255,.25);background:rgba(255,255,255,.1);color:#fff}
 #recenter{display:none}
 #fullscreen{right:92px}
@@ -67,12 +68,12 @@ input,textarea{user-select:text;-webkit-user-select:text}
 <label class="field">Commandes <select id="ctrl"><option value="kb">Clavier</option><option value="touch">Smartphone (gyroscope)</option></select></label></div>
 <div id="room-controls"><button id="play" class="primary">Créer une partie</button><input id="room-code" inputmode="numeric" maxlength="3" placeholder="Code (3 chiffres)"><button id="join-room">Rejoindre</button></div>
 <div id="room-status"></div>
-<div id="help">&amp; : mitrailleuse · é : roquettes · Espace : tirer · V : changer de vue · Entrée : chat<br>Géant : ZQSD marcher · A/E tourner · ↑/↓ viser · Espace sauter · F tirer · &amp; lance-roquettes (rocket jump) · é tapette à mouches</div>
+<div id="help"><b>Souris</b> : capturée dans le jeu · <b>Espace</b> : pause (libère le curseur) · Échap : pause · V : changer de vue · Entrée : chat<br>Avion : souris pour piloter · clic gauche tirer · molette gaz · &amp; mitrailleuse · é roquettes<br>Géant : souris pour viser/tourner · ZQSD marcher · Maj sauter · clic gauche tirer · molette/&amp;/é changer d’arme (lance-roquettes / tapette)</div>
 <details><summary>Touches — cliquer pour modifier</summary><div id="keybinds"></div></details></div></div>
 <div id="touch"><button id="t-fire">Feu</button><button id="t-up">Gaz +</button><button id="t-down">Gaz −</button><button id="t-weapon">Arme</button><button id="t-cam">Vue</button><button id="t-trim-l">◄ Trim</button><button id="t-trim-r">Trim ►</button><button id="t-recenter" style="right:24px;top:160px;font-size:11px">Recentrer</button></div>
 <div id="hud"></div><div id="health"><div id="health-fill"></div></div><div id="room-display"></div><div id="board"></div><div id="feed"></div><div id="cross"></div>
 <button id="pause" class="hud-button">⏸ Pause</button><button id="respawn-btn" class="hud-button">↺ Respawn</button>
-<div id="pause-menu"><div id="pause-box"><h2 style="margin:0;text-align:center">Pause</h2><label class="field">Volume <input id="volume" type="range" min="0" max="100" value="80"></label><button id="resume">Reprendre</button><button id="respawn-menu">Respawn</button><button id="respawn-runway">Respawn sur la piste</button><button id="recenter">Recentrer le gyroscope</button></div></div>
+<div id="pause-menu"><div id="pause-box"><h2 style="margin:0;text-align:center">Pause</h2><label class="field">Volume <input id="volume" type="range" min="0" max="100" value="80"></label><button id="resume">Reprendre (Espace)</button><label class="field">Sensibilité souris <input id="sens" type="range" min="20" max="300" value="100"></label><button id="respawn-menu">Respawn</button><button id="respawn-runway">Respawn sur la piste</button><button id="recenter">Recentrer le gyroscope</button><button id="main-menu">Menu principal</button></div></div>
 <button id="fullscreen" class="hud-button">Plein écran</button><button id="minimap-toggle" class="hud-button">Minimap : oui</button><canvas id="minimap"></canvas>
 <input id="chat" maxlength="120" placeholder="Message…">
 <script type="module" src="/src/main.ts"></script></body></html>
