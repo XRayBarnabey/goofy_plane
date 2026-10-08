@@ -40,3 +40,45 @@ export function makeLabel(text: string) {
   s.scale.set(16, 4, 1); s.position.y = 5;
   return s;
 }
+
+const TRAIL_POINTS = 40, TRAIL_STEP = 0.04;
+export class Trail {
+  line: THREE.Line;
+  private pts: THREE.Vector3[] = [];
+  private acc = 0;
+  private base: THREE.Color;
+  private sky = new THREE.Color(0x87ceeb);
+  private pos = new Float32Array(TRAIL_POINTS * 3);
+  private col = new Float32Array(TRAIL_POINTS * 3);
+  constructor(color: number) {
+    this.base = new THREE.Color(color);
+    const g = new THREE.BufferGeometry();
+    g.setAttribute("position", new THREE.BufferAttribute(this.pos, 3));
+    g.setAttribute("color", new THREE.BufferAttribute(this.col, 3));
+    g.setDrawRange(0, 0);
+    this.line = new THREE.Line(g, new THREE.LineBasicMaterial({ vertexColors: true }));
+    this.line.frustumCulled = false;
+  }
+  setColor(color: number) { this.base.set(color); }
+  reset() { this.pts.length = 0; this.line.geometry.setDrawRange(0, 0); }
+  update(dt: number, source: THREE.Object3D, local: THREE.Vector3) {
+    this.acc += dt;
+    if (this.acc < TRAIL_STEP) return;
+    this.acc = 0;
+    const p = local.clone().multiply(source.scale).applyQuaternion(source.quaternion).add(source.position);
+    const last = this.pts[0];
+    if (last && last.distanceTo(p) > 300) this.pts.length = 0;
+    this.pts.unshift(p);
+    if (this.pts.length > TRAIL_POINTS) this.pts.pop();
+    const n = this.pts.length, c = new THREE.Color();
+    for (let i = 0; i < n; i++) {
+      this.pts[i].toArray(this.pos, i * 3);
+      c.copy(this.base).lerp(this.sky, i / TRAIL_POINTS);
+      c.toArray(this.col, i * 3);
+    }
+    const g = this.line.geometry;
+    g.attributes.position.needsUpdate = true; g.attributes.color.needsUpdate = true;
+    g.setDrawRange(0, n);
+  }
+  dispose() { this.line.removeFromParent(); this.line.geometry.dispose(); (this.line.material as THREE.Material).dispose(); }
+}
