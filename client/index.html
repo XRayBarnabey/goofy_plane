@@ -2,8 +2,8 @@
 <html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Goofy Plane</title>
 <style>
-html,body{margin:0;height:100%;overflow:hidden;background:#87ceeb;font-family:sans-serif;color:#fff}
-canvas{display:block}
+html,body{margin:0;height:100%;overflow:hidden;background:#87ceeb;font-family:sans-serif;color:#fff;user-select:none;-webkit-user-select:none;-webkit-touch-callout:none}
+canvas{display:block;touch-action:none}
 #menu{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:radial-gradient(ellipse at top,rgba(30,90,160,.75),rgba(5,15,35,.9));overflow:auto;box-sizing:border-box;padding:16px}
 #panel{width:min(520px,100%);display:flex;flex-direction:column;gap:14px;background:rgba(15,25,45,.78);border:1px solid rgba(255,255,255,.18);border-radius:18px;padding:24px;box-shadow:0 12px 40px rgba(0,0,0,.5);backdrop-filter:blur(8px)}
 #panel h1{margin:0;text-align:center;font-size:34px;letter-spacing:1px}
@@ -41,6 +41,15 @@ summary{cursor:pointer;font-size:14px;text-transform:uppercase;letter-spacing:2p
 #room-controls input{flex:1;width:0}
 #keybinds{display:grid;grid-template-columns:1fr auto;gap:5px 12px;text-align:left;font-size:14px;margin-top:10px}
 #keybinds button{font-size:13px;padding:4px 8px}
+button{touch-action:none;-webkit-touch-callout:none;user-select:none;-webkit-user-select:none}
+#minimap{position:fixed;right:12px;bottom:12px;width:170px;height:170px;border:1px solid rgba(255,255,255,.55);border-radius:50%;background:rgba(5,15,25,.3);pointer-events:none}
+.hud-button{position:fixed;top:48px;padding:6px 9px;border:1px solid rgba(255,255,255,.55);border-radius:8px;background:rgba(0,0,0,.4);color:white;font:12px sans-serif}
+#minimap-toggle{right:12px}
+#fullscreen{right:92px}
+.player-pointer{position:fixed;z-index:2;pointer-events:none;display:none;color:#fff;text-shadow:0 1px 3px #000;font:12px monospace;white-space:nowrap}
+.player-pointer i{display:block;width:0;height:0;border-top:9px solid transparent;border-bottom:9px solid transparent;border-left:14px solid var(--player-color);filter:drop-shadow(0 0 2px #000)}
+.player-pointer span{position:absolute;left:18px;top:1px}
+input,textarea{user-select:text;-webkit-user-select:text}
 </style></head><body>
 <div id="menu"><div id="panel"><h1>✈ Goofy Plane<small>Combat aérien multijoueur</small></h1>
 <input id="name" maxlength="16" placeholder="Pseudo">
@@ -54,5 +63,6 @@ summary{cursor:pointer;font-size:14px;text-transform:uppercase;letter-spacing:2p
 <details><summary>Touches — cliquer pour modifier</summary><div id="keybinds"></div></details></div></div>
 <div id="touch"><button id="t-fire">Feu</button><button id="t-up">Gaz +</button><button id="t-down">Gaz −</button><button id="t-weapon">Arme</button><button id="t-cam">Vue</button></div>
 <div id="hud"></div><div id="health"><div id="health-fill"></div></div><div id="room-display"></div><div id="board"></div><div id="feed"></div><div id="cross"></div>
+<button id="fullscreen" class="hud-button">Plein écran</button><button id="minimap-toggle" class="hud-button">Minimap : oui</button><canvas id="minimap"></canvas>
 <input id="chat" maxlength="120" placeholder="Message…">
 <script type="module" src="/src/main.ts"></script></body></html>
