@@ -4,8 +4,31 @@
 <style>
 html,body{margin:0;height:100%;overflow:hidden;background:#87ceeb;font-family:sans-serif;color:#fff}
 canvas{display:block}
-#menu{position:fixed;inset:0;display:flex;flex-direction:column;gap:12px;align-items:center;justify-content:center;background:rgba(0,0,0,.55)}
-#menu input,#menu button{font-size:18px;padding:8px 14px}
+#menu{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:radial-gradient(ellipse at top,rgba(30,90,160,.75),rgba(5,15,35,.9));overflow:auto;box-sizing:border-box;padding:16px}
+#panel{width:min(520px,100%);display:flex;flex-direction:column;gap:14px;background:rgba(15,25,45,.78);border:1px solid rgba(255,255,255,.18);border-radius:18px;padding:24px;box-shadow:0 12px 40px rgba(0,0,0,.5);backdrop-filter:blur(8px)}
+#panel h1{margin:0;text-align:center;font-size:34px;letter-spacing:1px}
+#panel h1 small{display:block;font-size:13px;font-weight:400;opacity:.7;letter-spacing:3px;text-transform:uppercase}
+#panel h3{margin:4px 0 0;font-size:14px;text-transform:uppercase;letter-spacing:2px;opacity:.75}
+.row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.row>*{flex:1}
+.field{display:flex;flex-direction:column;gap:4px;font-size:12px;text-transform:uppercase;letter-spacing:1px;opacity:.95}
+#menu input,#menu button,#menu select{font:inherit;font-size:16px;padding:10px 12px;border-radius:10px;border:1px solid rgba(255,255,255,.25);background:rgba(255,255,255,.1);color:#fff;box-sizing:border-box;min-width:0}
+#menu select option{color:#000}
+#menu input[type=color]{padding:2px;height:42px;cursor:pointer}
+#menu button{cursor:pointer;transition:background .15s,transform .1s}
+#menu button:hover{background:rgba(255,255,255,.22)}
+#menu button:active{transform:scale(.97)}
+#menu button.primary{background:linear-gradient(135deg,#ff8a3d,#e5392f);border:0;font-weight:700}
+#menu button.primary:hover{filter:brightness(1.1)}
+#room-status{text-align:center;min-height:1.2em;font-size:14px;color:#ffd27a}
+#help{text-align:center;line-height:1.5;font-size:14px;opacity:.85}
+details{border-top:1px solid rgba(255,255,255,.15);padding-top:10px}
+summary{cursor:pointer;font-size:14px;text-transform:uppercase;letter-spacing:2px;opacity:.8}
+#touch{display:none;position:fixed;inset:0;pointer-events:none}
+#touch button{position:fixed;pointer-events:auto;width:64px;height:64px;border-radius:50%;border:2px solid rgba(255,255,255,.7);background:rgba(0,0,0,.35);color:#fff;font-size:15px;touch-action:none;user-select:none}
+#t-fire{right:24px;bottom:24px;width:84px!important;height:84px!important;background:rgba(229,57,47,.55)!important}
+#t-up{right:124px;bottom:100px}#t-down{right:124px;bottom:24px}
+#t-weapon{right:24px;bottom:124px}#t-cam{right:24px;top:90px}
 #hud{position:fixed;top:10px;left:10px;text-shadow:0 0 3px #000;white-space:pre;font-family:monospace}
 #health{position:fixed;top:10px;left:10px;margin-top:104px;width:190px;height:14px;border:1px solid #fff;background:rgba(0,0,0,.55)}
 #health-fill{height:100%;width:100%;background:#42d66b;transition:width .15s,background .15s}
@@ -14,18 +37,22 @@ canvas{display:block}
 #feed{position:fixed;bottom:50px;left:10px;text-shadow:0 0 3px #000;font-size:14px;max-width:50%}
 #chat{position:fixed;bottom:10px;left:10px;display:none}
 #cross{position:fixed;left:50%;top:50%;width:8px;height:8px;margin:-4px;border:2px solid #fff;border-radius:50%;opacity:.6}
-#menu{max-height:100vh;overflow:auto;box-sizing:border-box;padding:24px}
-#menu input,#menu button,#menu select{font-size:16px;padding:8px 12px}
 #room-controls{display:flex;gap:8px;align-items:center}
-#keybinds{display:grid;grid-template-columns:auto auto;gap:5px 12px;text-align:left;font-size:14px}
+#room-controls input{flex:1;width:0}
+#keybinds{display:grid;grid-template-columns:1fr auto;gap:5px 12px;text-align:left;font-size:14px;margin-top:10px}
 #keybinds button{font-size:13px;padding:4px 8px}
 </style></head><body>
-<div id="menu"><h1>✈ Goofy Plane</h1><input id="name" maxlength="16" placeholder="Pseudo">
-<label>Avion <select id="aircraft"><option value="0">Éclaireur</option><option value="1">Intercepteur</option><option value="2">Bombardier</option></select></label>
-<div id="room-controls"><button id="play">Créer une partie</button><input id="room-code" inputmode="numeric" maxlength="3" placeholder="Code à 3 chiffres"><button id="join-room">Rejoindre</button></div>
+<div id="menu"><div id="panel"><h1>✈ Goofy Plane<small>Combat aérien multijoueur</small></h1>
+<input id="name" maxlength="16" placeholder="Pseudo">
+<div class="row"><label class="field">Avion <select id="aircraft"><option value="0">Éclaireur</option><option value="1">Intercepteur</option><option value="2">Bombardier</option></select></label>
+<label class="field" style="max-width:110px">Couleur <input id="color" type="color" value="#e53935"></label></div>
+<div class="row"><label class="field">Vue <select id="view"><option value="3">3ème personne</option><option value="1">1ère personne</option></select></label>
+<label class="field">Commandes <select id="ctrl"><option value="kb">Clavier</option><option value="touch">Smartphone (gyroscope)</option></select></label></div>
+<div id="room-controls"><button id="play" class="primary">Créer une partie</button><input id="room-code" inputmode="numeric" maxlength="3" placeholder="Code (3 chiffres)"><button id="join-room">Rejoindre</button></div>
 <div id="room-status"></div>
-<div style="text-align:center;line-height:1.5">1 : mitrailleuse · 2 : roquettes · Espace : tirer · Entrée : chat</div>
-<h3>Touches — cliquer pour modifier</h3><div id="keybinds"></div></div>
+<div id="help">&amp; : mitrailleuse · é : roquettes · Espace : tirer · V : changer de vue · Entrée : chat</div>
+<details><summary>Touches — cliquer pour modifier</summary><div id="keybinds"></div></details></div></div>
+<div id="touch"><button id="t-fire">Feu</button><button id="t-up">Gaz +</button><button id="t-down">Gaz −</button><button id="t-weapon">Arme</button><button id="t-cam">Vue</button></div>
 <div id="hud"></div><div id="health"><div id="health-fill"></div></div><div id="room-display"></div><div id="board"></div><div id="feed"></div><div id="cross"></div>
 <input id="chat" maxlength="120" placeholder="Message…">
 <script type="module" src="/src/main.ts"></script></body></html>

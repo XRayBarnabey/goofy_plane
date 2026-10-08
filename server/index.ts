@@ -18,7 +18,7 @@ const MIME: Record<string, string> = {
 
 interface Player {
   id: number; name: string; ws: WebSocket;
-  room: string; model: number;
+  room: string; model: number; color: number;
   p: [number, number, number]; q: [number, number, number, number];
   hp: number; kills: number; deaths: number; lastShots: Record<string, number>; lastMsg: number; msgs: number;
 }
@@ -75,7 +75,7 @@ wss.on("connection", (ws, request) => {
   const members = rooms.get(room)!;
   if (players.size >= MAX_PLAYERS || members.size >= MAX_PLAYERS) { send(ws, { t: "full" }); ws.close(); return; }
   const pl: Player = {
-    id: nextId++, name: "Pilote", ws, room, model: 0, p: [0, 300, 0], q: [0, 0, 0, 1],
+    id: nextId++, name: "Pilote", ws, room, model: 0, color: 0x1e88e5, p: [0, 300, 0], q: [0, 0, 0, 1],
     hp: 100, kills: 0, deaths: 0, lastShots: {}, lastMsg: 0, msgs: 0,
   };
   players.set(pl.id, pl);
@@ -93,6 +93,7 @@ wss.on("connection", (ws, request) => {
       case "name":
         pl.name = cleanName(m.name);
         pl.model = Number.isInteger(m.model) ? Math.max(0, Math.min(2, m.model)) : 0;
+        if (Number.isInteger(m.color)) pl.color = Math.max(0, Math.min(0xffffff, m.color));
         broadcastRoom(room, { t: "join", id: pl.id, name: pl.name, model: pl.model });
         break;
       case "state":
@@ -146,7 +147,7 @@ wss.on("connection", (ws, request) => {
 setInterval(() => {
   for (const [room, ids] of rooms) {
     const list = [...ids].map((id) => players.get(id)!).filter(Boolean).map((p) => ({
-      id: p.id, n: p.name, model: p.model, p: p.p, q: p.q, k: p.kills, d: p.deaths,
+      id: p.id, n: p.name, model: p.model, c: p.color, p: p.p, q: p.q, k: p.kills, d: p.deaths,
     }));
     if (list.length) broadcastRoom(room, { t: "snap", players: list });
   }
