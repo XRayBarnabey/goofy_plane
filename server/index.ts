@@ -92,7 +92,7 @@ wss.on("connection", (ws, request) => {
     switch (m?.t) {
       case "name":
         pl.name = cleanName(m.name);
-        pl.model = Number.isInteger(m.model) ? Math.max(0, Math.min(2, m.model)) : 0;
+        pl.model = Number.isInteger(m.model) ? Math.max(0, Math.min(3, m.model)) : 0;
         if (Number.isInteger(m.color)) pl.color = Math.max(0, Math.min(0xffffff, m.color));
         broadcastRoom(room, { t: "join", id: pl.id, name: pl.name, model: pl.model });
         break;
@@ -101,7 +101,7 @@ wss.on("connection", (ws, request) => {
           pl.p = m.p as Player["p"]; pl.q = m.q as Player["q"];
           for (let pass = 0; pass < 2; pass++) for (const id of members) {
             const other = players.get(id);
-            if (!other || other.id === pl.id) continue;
+            if (!other || other.id === pl.id || other.model === 3 || pl.model === 3) continue;
             let dx = pl.p[0] - other.p[0], dy = pl.p[1] - other.p[1], dz = pl.p[2] - other.p[2];
             let distance = Math.hypot(dx, dy, dz);
             if (distance >= 18) continue;
@@ -117,28 +117,35 @@ wss.on("connection", (ws, request) => {
         break;
       }
       case "shoot": {
-        const weapon = m.weapon === "rocket" ? "rocket" : "gun";
-        const cooldown = weapon === "rocket" ? 700 : 100;
+        const giant = pl.model === 3;
+        const weapon = giant ? (m.weapon === "swat" ? "swat" : "grocket") : (m.weapon === "rocket" ? "rocket" : "gun");
+        const cooldown = { gun: 100, rocket: 700, grocket: 900, swat: 800 }[weapon];
         if (now - (pl.lastShots[weapon] ?? 0) < cooldown || !finite(m.o, 3) || !finite(m.d, 3)) return;
         pl.lastShots[weapon] = now;
         const len = Math.hypot(m.d[0], m.d[1], m.d[2]) || 1;
         const d = m.d.map((x: number) => x / len);
         broadcastRoom(room, { t: "shot", id: pl.id, o: m.o, d, weapon });
+        const range = weapon === "swat" ? 160 : 600;
+        const damage = { gun: 10, rocket: 35, grocket: 35, swat: 100 }[weapon];
+        let best: Player | null = null, bestProj = Infinity;
         for (const id of members) {
           const o = players.get(id)!;
           if (o.id === pl.id) continue;
-          const v = [o.p[0] - m.o[0], o.p[1] - m.o[1], o.p[2] - m.o[2]];
+          // le géant est une grande cible dont la position est celle de ses pieds
+          const c = o.model === 3 ? [o.p[0], o.p[1] + 40, o.p[2]] : o.p, radius = o.model === 3 ? 38 : HIT_RADIUS;
+          const v = [c[0] - m.o[0], c[1] - m.o[1], c[2] - m.o[2]];
           const proj = v[0] * d[0] + v[1] * d[1] + v[2] * d[2];
-          if (proj < 0 || proj > 600) continue;
+          if (proj < 0 || proj > range) continue;
           const dist = Math.hypot(v[0] - d[0] * proj, v[1] - d[1] * proj, v[2] - d[2] * proj);
-          if (dist < (weapon === "rocket" ? HIT_RADIUS * 1.8 : HIT_RADIUS)) {
-            o.hp -= weapon === "rocket" ? 35 : 10;
-            if (o.hp <= 0) {
-              o.hp = 100; o.deaths++; pl.kills++;
-              broadcastRoom(room, { t: "kill", killer: pl.name, victim: o.name, victimId: o.id });
-            } else send(o.ws, { t: "hit", hp: o.hp });
-            break;
-          }
+          const reach = weapon === "swat" ? radius + 40 : weapon === "gun" ? radius : radius * 1.8;
+          if (dist < reach && proj < bestProj) { best = o; bestProj = proj; }
+        }
+        if (best) {
+          best.hp -= damage * (best.model === 3 ? 0.3 : 1);
+          if (best.hp <= 0) {
+            best.hp = 100; best.deaths++; pl.kills++;
+            broadcastRoom(room, { t: "kill", killer: pl.name, victim: best.name, victimId: best.id });
+          } else send(best.ws, { t: "hit", hp: best.hp });
         }
         break;
       }

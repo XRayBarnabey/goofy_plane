@@ -1,4 +1,5 @@
 import * as THREE from "three";
+import { buildForest } from "./forest";
 
 function mulberry32(a: number) {
   return () => {
@@ -10,6 +11,18 @@ function mulberry32(a: number) {
 }
 
 export const WATER_LEVEL = 0;
+export const RUNWAY = { x: 0, z0: 1200, z1: 2400, halfWidth: 40, y: 25 };
+export const RUNWAY_FLAT = 70;
+const RUNWAY_BLEND = 250;
+export function runwayDistance(x: number, z: number) {
+  const dx = Math.max(Math.abs(x - RUNWAY.x) - RUNWAY.halfWidth, 0);
+  const dz = Math.max(RUNWAY.z0 - z, z - RUNWAY.z1, 0);
+  return Math.hypot(dx, dz);
+}
+export const onRunway = (x: number, z: number, margin = 0) => runwayDistance(x, z) <= margin;
+
+export interface GiantTree { x: number; z: number; y: number; h: number; r: number; kind: number; rot: number; tint: number }
+export const FOREST = { x: -2600, z: 600, radius: 1500 };
 
 export interface BuildingBounds {
   x: number;
@@ -57,7 +70,47 @@ export class Terrain {
     const m = Math.max(0, h + 0.1);
     const naturalHeight = h < -0.05 ? h * 120 : m * m * 1400 - 6;
     const cityBlend = Math.min(1, Math.max(0, (Math.hypot(x, z) - 650) / 500));
-    return 25 * (1 - cityBlend) + naturalHeight * cityBlend;
+    const base = 25 * (1 - cityBlend) + naturalHeight * cityBlend;
+    const rb = Math.min(1, Math.max(0, (runwayDistance(x, z) - RUNWAY_FLAT) / RUNWAY_BLEND));
+    const smooth = rb * rb * (3 - 2 * rb);
+    return RUNWAY.y * (1 - smooth) + base * smooth;
+  }
+  private forest: GiantTree[] | null = null;
+  get trees(): GiantTree[] {
+    if (this.forest) return this.forest;
+    const r = mulberry32(this.seed ^ 0x7ee5), list: GiantTree[] = [];
+    for (let i = 0; i < 2600 && list.length < 520; i++) {
+      const a = r() * Math.PI * 2, d = Math.sqrt(r()) * FOREST.radius;
+      const x = FOREST.x + Math.cos(a) * d, z = FOREST.z + Math.sin(a) * d, y = this.height(x, z);
+      const kind = r() < 0.6 ? 0 : 1, h = 170 + r() * 130, rad = h * 0.05;
+      if (y < 6 || y > 220 || list.some((t) => Math.hypot(t.x - x, t.z - z) < (t.r + rad) * 2.2)) continue;
+      list.push({ x, z, y, h, r: rad, kind, rot: r() * Math.PI * 2, tint: 0.85 + r() * 0.3 });
+    }
+    return this.forest = list;
+  }
+  /** Tronc d'arbre géant touché par une sphère (utilisé par les avions et le géant). */
+  hitsTree(p: THREE.Vector3, radius: number) {
+    if (Math.hypot(p.x - FOREST.x, p.z - FOREST.z) > FOREST.radius + 100) return null;
+    for (const t of this.trees) {
+      const dx = p.x - t.x, dz = p.z - t.z;
+      const f = Math.max(0, Math.min(1, (p.y - t.y) / t.h));
+      const trunk = t.r * (1.25 - f * 0.55) + radius;
+      if (p.y < t.y - radius || p.y > t.y + t.h * 1.05) continue;
+      // couronne : large au milieu du feuillage, tronc seul en bas
+      const crown = f > 0.3 ? t.r * (t.kind === 0 ? 7.5 * (1 - f) + 1 : 6.5 * Math.sin(Math.min(1, (f - 0.3) / 0.7) * Math.PI) + 1) + radius : 0;
+      if (dx * dx + dz * dz < Math.max(trunk, crown) ** 2) return t;
+    }
+    return null;
+  }
+  /** Hauteur du toit d'un bâtiment sous (x, z), ou -Infinity. */
+  buildingTop(x: number, z: number) {
+    if (Math.abs(x) > 1000 || Math.abs(z) > 1000) return -Infinity;
+    const cx = Math.round(x / 150), cz = Math.round(z / 150);
+    for (let ix = cx - 1; ix <= cx + 1; ix++) for (let iz = cz - 1; iz <= cz + 1; iz++) {
+      const b = buildingAtCell(ix, iz);
+      if (b && Math.abs(x - b.x) < b.width / 2 && Math.abs(z - b.z) < b.depth / 2) return 25 + b.height;
+    }
+    return -Infinity;
   }
   collidesWithBuilding(position: THREE.Vector3, radius: number) {
     if (Math.abs(position.x) > 950 || Math.abs(position.z) > 950) return false;
@@ -81,6 +134,8 @@ export class TerrainView {
   constructor(private t: Terrain, scene: THREE.Scene) {
     scene.add(this.group);
     this.addCity();
+    this.addRunway();
+    buildForest(t, scene);
     this.addClouds(t.seed);
     const water = new THREE.Mesh(new THREE.PlaneGeometry(40000, 40000).rotateX(-Math.PI / 2),
       new THREE.MeshLambertMaterial({ color: 0x1f6fb5, transparent: true, opacity: 0.85 }));
@@ -158,6 +213,34 @@ export class TerrainView {
       }
     }
     this.group.add(city);
+  }
+  private addRunway() {
+    const g = new THREE.Group(), len = RUNWAY.z1 - RUNWAY.z0, cz = (RUNWAY.z0 + RUNWAY.z1) / 2, y = RUNWAY.y;
+    const asphalt = new THREE.MeshLambertMaterial({ color: 0x2b2f34 }), white = new THREE.MeshLambertMaterial({ color: 0xf2f2f2 });
+    const apron = new THREE.Mesh(new THREE.PlaneGeometry(RUNWAY.halfWidth * 2 + 12, len + 24).rotateX(-Math.PI / 2), new THREE.MeshLambertMaterial({ color: 0x555a60 }));
+    apron.position.set(RUNWAY.x, y + 0.15, cz); g.add(apron);
+    const strip = new THREE.Mesh(new THREE.PlaneGeometry(RUNWAY.halfWidth * 2, len).rotateX(-Math.PI / 2), asphalt);
+    strip.position.set(RUNWAY.x, y + 0.3, cz); g.add(strip);
+    const add = (w: number, d: number, x: number, z: number, mat = white) => {
+      const m = new THREE.Mesh(new THREE.PlaneGeometry(w, d).rotateX(-Math.PI / 2), mat); m.position.set(x, y + 0.45, z); g.add(m);
+    };
+    for (let z = RUNWAY.z0 + 120; z < RUNWAY.z1 - 100; z += 50) add(2, 24, RUNWAY.x, z);
+    for (const side of [-1, 1]) {
+      add(1.2, len - 4, RUNWAY.x + side * (RUNWAY.halfWidth - 2), cz);
+      for (const end of [RUNWAY.z0 + 30, RUNWAY.z1 - 30]) for (let i = 0; i < 5; i++) add(2.2, 36, RUNWAY.x + side * (4 + i * 3.4), end);
+    }
+    const lights = new THREE.InstancedMesh(new THREE.SphereGeometry(0.9, 6, 4), new THREE.MeshBasicMaterial({ color: 0xffd36b }), 2 * Math.floor(len / 40));
+    const m4 = new THREE.Matrix4();
+    for (let i = 0, n = 0; i < Math.floor(len / 40); i++) for (const side of [-1, 1]) lights.setMatrixAt(n++, m4.makeTranslation(RUNWAY.x + side * (RUNWAY.halfWidth + 3), y + 0.8, RUNWAY.z0 + 20 + i * 40));
+    g.add(lights);
+    // tour de contrôle et hangar
+    const tower = new THREE.Mesh(new THREE.BoxGeometry(10, 36, 10), new THREE.MeshLambertMaterial({ color: 0xc9c9c4 })); tower.position.set(RUNWAY.x + 85, y + 18, cz - 100);
+    const cab = new THREE.Mesh(new THREE.BoxGeometry(18, 8, 18), new THREE.MeshLambertMaterial({ color: 0x5aa2c8, emissive: 0x1a3a50 })); cab.position.set(RUNWAY.x + 85, y + 40, cz - 100);
+    const hangar = new THREE.Mesh(new THREE.BoxGeometry(60, 22, 70), new THREE.MeshLambertMaterial({ color: 0x8a8f98 })); hangar.position.set(RUNWAY.x + 130, y + 11, cz + 140);
+    const hangarRoof = new THREE.Mesh(new THREE.BoxGeometry(64, 3, 74), new THREE.MeshLambertMaterial({ color: 0x3a3f45 })); hangarRoof.position.set(RUNWAY.x + 130, y + 23.5, cz + 140);
+    g.add(hangarRoof);
+    g.add(tower, cab, hangar);
+    this.group.add(g);
   }
   private addClouds(seed: number) {
     const random = mulberry32(seed ^ 0x5f3759df);

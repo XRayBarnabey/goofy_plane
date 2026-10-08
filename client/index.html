@@ -27,6 +27,7 @@ summary{cursor:pointer;font-size:14px;text-transform:uppercase;letter-spacing:2p
 #touch{display:none;position:fixed;inset:0;pointer-events:none}
 #touch button{position:fixed;pointer-events:auto;width:64px;height:64px;border-radius:50%;border:2px solid rgba(255,255,255,.7);background:rgba(0,0,0,.35);color:#fff;font-size:15px;touch-action:none;user-select:none}
 #t-fire{right:24px;bottom:24px;width:84px!important;height:84px!important;background:rgba(229,57,47,.55)!important}
+#t-trim-l{left:24px;bottom:124px;width:56px!important;height:56px!important;font-size:12px!important}#t-trim-r{left:96px;bottom:124px;width:56px!important;height:56px!important;font-size:12px!important}
 #t-up{right:124px;bottom:100px}#t-down{right:124px;bottom:24px}
 #t-weapon{right:24px;bottom:124px}#t-cam{right:24px;top:90px}
 #hud{position:fixed;top:10px;left:10px;text-shadow:0 0 3px #000;white-space:pre;font-family:monospace}
@@ -34,7 +35,7 @@ summary{cursor:pointer;font-size:14px;text-transform:uppercase;letter-spacing:2p
 #health-fill{height:100%;width:100%;background:#42d66b;transition:width .15s,background .15s}
 #board{position:fixed;top:10px;right:10px;text-shadow:0 0 3px #000;white-space:pre;font-family:monospace;text-align:right}
 #room-display{position:fixed;top:10px;left:220px;text-shadow:0 0 3px #000;font-family:monospace}
-#feed{position:fixed;bottom:50px;left:10px;text-shadow:0 0 3px #000;font-size:14px;max-width:50%}
+#feed{pointer-events:none;position:fixed;bottom:50px;left:10px;text-shadow:0 0 3px #000;font-size:14px;max-width:50%}
 #chat{position:fixed;bottom:10px;left:10px;display:none}
 #cross{position:fixed;left:50%;top:50%;width:8px;height:8px;margin:-4px;border:2px solid #fff;border-radius:50%;opacity:.6}
 #room-controls{display:flex;gap:8px;align-items:center}
@@ -60,18 +61,18 @@ input,textarea{user-select:text;-webkit-user-select:text}
 </style></head><body>
 <div id="menu"><div id="panel"><h1>✈ Goofy Plane<small>Combat aérien multijoueur</small></h1>
 <input id="name" maxlength="16" placeholder="Pseudo">
-<div class="row"><label class="field">Avion <select id="aircraft"><option value="0">Éclaireur</option><option value="1">Intercepteur</option><option value="2">Bombardier</option></select></label>
+<div class="row"><label class="field">Avion <select id="aircraft"><option value="0">Éclaireur</option><option value="1">Intercepteur</option><option value="2">Bombardier</option><option value="3">Monstre géant</option></select></label>
 <label class="field" style="max-width:110px">Couleur <input id="color" type="color" value="#e53935"></label></div>
 <div class="row"><label class="field">Vue <select id="view"><option value="3">3ème personne</option><option value="1">1ère personne</option></select></label>
 <label class="field">Commandes <select id="ctrl"><option value="kb">Clavier</option><option value="touch">Smartphone (gyroscope)</option></select></label></div>
 <div id="room-controls"><button id="play" class="primary">Créer une partie</button><input id="room-code" inputmode="numeric" maxlength="3" placeholder="Code (3 chiffres)"><button id="join-room">Rejoindre</button></div>
 <div id="room-status"></div>
-<div id="help">&amp; : mitrailleuse · é : roquettes · Espace : tirer · V : changer de vue · Entrée : chat</div>
+<div id="help">&amp; : mitrailleuse · é : roquettes · Espace : tirer · V : changer de vue · Entrée : chat<br>Géant : ZQSD marcher · A/E tourner · ↑/↓ viser · Espace sauter · F tirer · &amp; lance-roquettes (rocket jump) · é tapette à mouches</div>
 <details><summary>Touches — cliquer pour modifier</summary><div id="keybinds"></div></details></div></div>
-<div id="touch"><button id="t-fire">Feu</button><button id="t-up">Gaz +</button><button id="t-down">Gaz −</button><button id="t-weapon">Arme</button><button id="t-cam">Vue</button><button id="t-recenter" style="right:24px;top:160px;font-size:11px">Recentrer</button></div>
+<div id="touch"><button id="t-fire">Feu</button><button id="t-up">Gaz +</button><button id="t-down">Gaz −</button><button id="t-weapon">Arme</button><button id="t-cam">Vue</button><button id="t-trim-l">◄ Trim</button><button id="t-trim-r">Trim ►</button><button id="t-recenter" style="right:24px;top:160px;font-size:11px">Recentrer</button></div>
 <div id="hud"></div><div id="health"><div id="health-fill"></div></div><div id="room-display"></div><div id="board"></div><div id="feed"></div><div id="cross"></div>
 <button id="pause" class="hud-button">⏸ Pause</button><button id="respawn-btn" class="hud-button">↺ Respawn</button>
-<div id="pause-menu"><div id="pause-box"><h2 style="margin:0;text-align:center">Pause</h2><label class="field">Volume <input id="volume" type="range" min="0" max="100" value="80"></label><button id="resume">Reprendre</button><button id="respawn-menu">Respawn</button><button id="recenter">Recentrer le gyroscope</button></div></div>
+<div id="pause-menu"><div id="pause-box"><h2 style="margin:0;text-align:center">Pause</h2><label class="field">Volume <input id="volume" type="range" min="0" max="100" value="80"></label><button id="resume">Reprendre</button><button id="respawn-menu">Respawn</button><button id="respawn-runway">Respawn sur la piste</button><button id="recenter">Recentrer le gyroscope</button></div></div>
 <button id="fullscreen" class="hud-button">Plein écran</button><button id="minimap-toggle" class="hud-button">Minimap : oui</button><canvas id="minimap"></canvas>
 <input id="chat" maxlength="120" placeholder="Message…">
 <script type="module" src="/src/main.ts"></script></body></html>

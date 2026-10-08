@@ -30,3 +30,11 @@ Créer une partie génère un code à 3 chiffres ; saisissez le code d'un hôte 
 Le monde est généré depuis une graine fournie par le serveur (identique pour tous). Les tirs et dégâts sont validés côté serveur ; la barre de vie affiche les PV restants.
 
 Sur smartphone, choisissez « Smartphone (gyroscope) » puis autorisez l’accès aux capteurs ; le bouton « Plein écran » permet de jouer sans l’interface du navigateur. Le bouton « Minimap » affiche ou masque la carte transparente. Les avions ont des bruitages distincts selon le modèle et l’arme, des repères colorés indiquent les autres pilotes, et les collisions avec les avions et les bâtiments sont prises en compte.
+
+
+## Piste, forêt et monstre géant
+
+- Une piste (x=0, z de 1200 à 2400) permet de décoller (≥ 52 m/s puis cabrer) et d'atterrir (train à plat, descente < 10 m/s). Pause → « Respawn sur la piste » pour y démarrer.
+- Une forêt d'arbres géants (conifères et feuillus) se trouve à l'ouest de la ville ; les troncs sont solides.
+- Smartphone : gyroscope corrigé (les deux axes étaient inversés) et deux boutons tactiles « Trim » pour le trim de dérive.
+- Le « Monstre géant » est jouable (menu Avion). Arme 1 : lance-roquettes (rocket jump : l'explosion le propulse sans dégâts). Arme 2 : tapette à mouches géante pour abattre les avions. Touches (Z/Q/S/D, A/E, ↑/↓, Espace, F, &/é par défaut) modifiables dans « Touches ».
