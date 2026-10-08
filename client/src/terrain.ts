@@ -11,9 +11,28 @@ function mulberry32(a: number) {
 
 export const WATER_LEVEL = 0;
 
+export interface BuildingBounds {
+  x: number;
+  z: number;
+  width: number;
+  depth: number;
+  height: number;
+}
+
+function buildingAtCell(ix: number, iz: number): BuildingBounds | null {
+  if ((ix * 3 + iz * 5) % 7 === 0) return null;
+  return {
+    x: ix * 150 + ((ix * 37 + iz * 19) % 23),
+    z: iz * 150 + ((iz * 29 + ix * 11) % 23),
+    width: 48 + Math.abs((ix * 7 + iz * 13) % 28),
+    depth: 48 + Math.abs((ix * 11 + iz * 5) % 28),
+    height: (3 + Math.abs((ix * 17 + iz * 23) % 14)) * 8,
+  };
+}
+
 export class Terrain {
   private perm = new Uint8Array(512);
-  constructor(seed: number) {
+  constructor(readonly seed: number) {
     const r = mulberry32(seed), p = Array.from({ length: 256 }, (_, i) => i);
     for (let i = 255; i > 0; i--) { const j = Math.floor(r() * (i + 1)); [p[i], p[j]] = [p[j], p[i]]; }
     for (let i = 0; i < 512; i++) this.perm[i] = p[i & 255];
@@ -40,6 +59,17 @@ export class Terrain {
     const cityBlend = Math.min(1, Math.max(0, (Math.hypot(x, z) - 650) / 500));
     return 25 * (1 - cityBlend) + naturalHeight * cityBlend;
   }
+  collidesWithBuilding(position: THREE.Vector3, radius: number) {
+    if (Math.abs(position.x) > 950 || Math.abs(position.z) > 950) return false;
+    for (let ix = -5; ix <= 5; ix++) for (let iz = -5; iz <= 5; iz++) {
+      const building = buildingAtCell(ix, iz);
+      if (!building || position.y + radius < 25 || position.y - radius > 25 + building.height) continue;
+      const dx = Math.max(Math.abs(position.x - building.x) - building.width / 2, 0);
+      const dz = Math.max(Math.abs(position.z - building.z) - building.depth / 2, 0);
+      if (dx * dx + dz * dz < radius * radius) return true;
+    }
+    return false;
+  }
 }
 
 const SIZE = 3000, SEGS = 96;
@@ -51,6 +81,7 @@ export class TerrainView {
   constructor(private t: Terrain, scene: THREE.Scene) {
     scene.add(this.group);
     this.addCity();
+    this.addClouds(t.seed);
     const water = new THREE.Mesh(new THREE.PlaneGeometry(40000, 40000).rotateX(-Math.PI / 2),
       new THREE.MeshLambertMaterial({ color: 0x1f6fb5, transparent: true, opacity: 0.85 }));
     water.position.y = WATER_LEVEL;
@@ -82,9 +113,10 @@ export class TerrainView {
     const bandMaterial = new THREE.MeshLambertMaterial({ color: 0xdedede });
     const park = new THREE.MeshLambertMaterial({ color: 0x4a9a45 });
     for (let ix = -5; ix <= 5; ix++) for (let iz = -5; iz <= 5; iz++) {
-      const x = ix * 150 + ((ix * 37 + iz * 19) % 23);
-      const z = iz * 150 + ((iz * 29 + ix * 11) % 23);
-      if ((ix * 3 + iz * 5) % 7 === 0) {
+      const buildingData = buildingAtCell(ix, iz);
+      const x = buildingData?.x ?? ix * 150 + ((ix * 37 + iz * 19) % 23);
+      const z = buildingData?.z ?? iz * 150 + ((iz * 29 + ix * 11) % 23);
+      if (!buildingData) {
         const lawn = new THREE.Mesh(new THREE.BoxGeometry(90, 0.4, 90), park); lawn.position.set(x, 25.3, z); city.add(lawn);
         for (let i = 0; i < 6; i++) {
           const tx = x + ((i * 37) % 70) - 35, tz = z + ((i * 53) % 70) - 35;
@@ -95,10 +127,8 @@ export class TerrainView {
         }
         continue;
       }
-      const width = 48 + Math.abs((ix * 7 + iz * 13) % 28);
-      const depth = 48 + Math.abs((ix * 11 + iz * 5) % 28);
-      const floors = 3 + Math.abs((ix * 17 + iz * 23) % 14);
-      const height = floors * 8;
+      const { width, depth, height } = buildingData;
+      const floors = height / 8;
       const building = new THREE.Mesh(
         new THREE.BoxGeometry(width, height, depth),
         new THREE.MeshLambertMaterial({ color: facadeColors[Math.abs(ix * 3 + iz * 7) % facadeColors.length] }),
@@ -128,6 +158,22 @@ export class TerrainView {
       }
     }
     this.group.add(city);
+  }
+  private addClouds(seed: number) {
+    const random = mulberry32(seed ^ 0x5f3759df);
+    const cloudMaterial = new THREE.MeshLambertMaterial({ color: 0xffffff, transparent: true, opacity: 0.82 });
+    for (let i = 0; i < 90; i++) {
+      const cloud = new THREE.Group();
+      const count = 3 + Math.floor(random() * 4);
+      for (let j = 0; j < count; j++) {
+        const puff = new THREE.Mesh(new THREE.SphereGeometry(1, 8, 6), cloudMaterial);
+        puff.scale.set(35 + random() * 45, 12 + random() * 14, 24 + random() * 35);
+        puff.position.set((random() - 0.5) * 90, (random() - 0.5) * 12, (random() - 0.5) * 55);
+        cloud.add(puff);
+      }
+      cloud.position.set((random() - 0.5) * 30000, 500 + random() * 500, (random() - 0.5) * 30000);
+      this.group.add(cloud);
+    }
   }
   private build(cx: number, cz: number) {
     const g = new THREE.PlaneGeometry(SIZE, SIZE, SEGS, SEGS).rotateX(-Math.PI / 2);

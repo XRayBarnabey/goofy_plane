@@ -97,7 +97,19 @@ wss.on("connection", (ws, request) => {
         broadcastRoom(room, { t: "join", id: pl.id, name: pl.name, model: pl.model });
         break;
       case "state":
-        if (finite(m.p, 3) && finite(m.q, 4)) { pl.p = m.p as Player["p"]; pl.q = m.q as Player["q"]; }
+        if (finite(m.p, 3) && finite(m.q, 4)) {
+          pl.p = m.p as Player["p"]; pl.q = m.q as Player["q"];
+          for (let pass = 0; pass < 2; pass++) for (const id of members) {
+            const other = players.get(id);
+            if (!other || other.id === pl.id) continue;
+            let dx = pl.p[0] - other.p[0], dy = pl.p[1] - other.p[1], dz = pl.p[2] - other.p[2];
+            let distance = Math.hypot(dx, dy, dz);
+            if (distance >= 18) continue;
+            if (distance < 0.001) { dx = pl.id % 2 ? 1 : -1; dy = 0; dz = 0; distance = 1; }
+            const separation = 18 / distance;
+            pl.p = [other.p[0] + dx * separation, other.p[1] + dy * separation, other.p[2] + dz * separation];
+          }
+        }
         break;
       case "chat": {
         const text = String(m.text ?? "").slice(0, 120).trim();
