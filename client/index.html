@@ -4,7 +4,7 @@
 <style>
 html,body{margin:0;height:100%;overflow:hidden;background:#87ceeb;font-family:sans-serif;color:#fff;user-select:none;-webkit-user-select:none;-webkit-touch-callout:none}
 canvas{display:block;touch-action:none}
-#menu{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:radial-gradient(ellipse at top,rgba(30,90,160,.75),rgba(5,15,35,.9));overflow:auto;box-sizing:border-box;padding:16px}
+#menu{position:fixed;inset:0;z-index:10;display:flex;align-items:center;justify-content:center;background:radial-gradient(ellipse at top,rgba(30,90,160,.75),rgba(5,15,35,.9));overflow:auto;box-sizing:border-box;padding:16px}
 #panel{width:min(520px,100%);display:flex;flex-direction:column;gap:14px;background:rgba(15,25,45,.78);border:1px solid rgba(255,255,255,.18);border-radius:18px;padding:24px;box-shadow:0 12px 40px rgba(0,0,0,.5);backdrop-filter:blur(8px)}
 #panel h1{margin:0;text-align:center;font-size:34px;letter-spacing:1px}
 #panel h1 small{display:block;font-size:13px;font-weight:400;opacity:.7;letter-spacing:3px;text-transform:uppercase}
@@ -43,6 +43,7 @@ summary{cursor:pointer;font-size:14px;text-transform:uppercase;letter-spacing:2p
 #keybinds button{font-size:13px;padding:4px 8px}
 button{touch-action:none;-webkit-touch-callout:none;user-select:none;-webkit-user-select:none}
 #minimap{position:fixed;right:12px;bottom:12px;width:170px;height:170px;border:1px solid rgba(255,255,255,.55);border-radius:50%;background:rgba(5,15,25,.3);pointer-events:none}
+body.touch-controls-active #minimap{top:170px;bottom:auto}
 .hud-button{position:fixed;top:48px;padding:6px 9px;border:1px solid rgba(255,255,255,.55);border-radius:8px;background:rgba(0,0,0,.4);color:white;font:12px sans-serif}
 #minimap-toggle{right:12px}
 #fullscreen{right:92px}

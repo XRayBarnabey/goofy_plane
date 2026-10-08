@@ -28,3 +28,5 @@ Les commandes de vol sont configurables depuis le menu et conservées dans le na
 Créer une partie génère un code à 3 chiffres ; saisissez le code d'un hôte pour rejoindre sa partie. Le monde comprend une zone urbaine avec des bâtiments ainsi que deux avions supplémentaires sélectionnables.
 
 Le monde est généré depuis une graine fournie par le serveur (identique pour tous). Les tirs et dégâts sont validés côté serveur ; la barre de vie affiche les PV restants.
+
+Sur smartphone, choisissez « Smartphone (gyroscope) » puis autorisez l’accès aux capteurs ; le bouton « Plein écran » permet de jouer sans l’interface du navigateur. Le bouton « Minimap » affiche ou masque la carte transparente. Les avions ont des bruitages distincts selon le modèle et l’arme, des repères colorés indiquent les autres pilotes, et les collisions avec les avions et les bâtiments sont prises en compte.

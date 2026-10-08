@@ -35,6 +35,7 @@ const remotes = new Map<number, Remote>();
 const names = new Map<number, string>();
 const minimap = $<HTMLCanvasElement>("minimap");
 let showMinimap = true;
+minimap.style.display = "none";
 let audio: AudioContext | null = null;
 let engine: OscillatorNode | null = null;
 let engineGain: GainNode | null = null;
@@ -63,7 +64,7 @@ function startAudio() {
   if (!AudioCtor) return;
   audio = new AudioCtor();
   engine = audio.createOscillator();
-  engine.type = selectedModel === 1 ? "sawtooth" : "triangle";
+  engine.type = selectedModel === 0 ? "triangle" : selectedModel === 1 ? "sawtooth" : "square";
   engineGain = audio.createGain();
   engineGain.gain.value = 0.012;
   engine.connect(engineGain).connect(audio.destination);
@@ -106,6 +107,7 @@ function connect(name: string, roomCode?: string) {
     switch (m.t) {
       case "welcome":
         myId = m.id; terrain = new Terrain(m.seed); tview = new TerrainView(terrain, scene); respawn();
+        minimap.style.display = showMinimap ? "block" : "none";
         $("room-status").textContent = `Code de partie : ${m.room}`;
         $("room-display").textContent = `Partie : ${m.room}`;
         feed(`Partie ${m.room} créée ou rejointe`);
@@ -209,15 +211,24 @@ addEventListener("keyup", (e) => keys.delete(e.code));
 addEventListener("contextmenu", (e) => e.preventDefault());
 const fullscreenButton = $<HTMLButtonElement>("fullscreen");
 fullscreenButton.onclick = async () => {
+  const doc = document as Document & { webkitFullscreenElement?: Element; webkitExitFullscreen?: () => Promise<void> };
+  const root = document.documentElement as HTMLElement & { webkitRequestFullscreen?: () => Promise<void> };
   try {
-    if (document.fullscreenElement) await document.exitFullscreen();
-    else if (renderer.domElement.requestFullscreen) {
-      await renderer.domElement.requestFullscreen();
+    if (document.fullscreenElement || doc.webkitFullscreenElement) {
+      if (document.exitFullscreen) await document.exitFullscreen();
+      else await doc.webkitExitFullscreen?.();
+    } else if (root.requestFullscreen || root.webkitRequestFullscreen) {
+      if (root.requestFullscreen) await root.requestFullscreen();
+      else await root.webkitRequestFullscreen?.();
       try { await screen.orientation?.lock("landscape"); } catch { /* Orientation lock is optional. */ }
     } else { feed("Le plein écran n’est pas pris en charge par ce navigateur"); return; }
   } catch { feed("Impossible d’activer le plein écran"); }
 };
 document.addEventListener("fullscreenchange", () => { fullscreenButton.textContent = document.fullscreenElement ? "Quitter plein écran" : "Plein écran"; });
+document.addEventListener("webkitfullscreenchange", () => {
+  const doc = document as Document & { webkitFullscreenElement?: Element };
+  fullscreenButton.textContent = doc.webkitFullscreenElement ? "Quitter plein écran" : "Plein écran";
+});
 $<HTMLButtonElement>("minimap-toggle").onclick = () => {
   showMinimap = !showMinimap; minimap.style.display = showMinimap ? "block" : "none";
   $("minimap-toggle").textContent = `Minimap : ${showMinimap ? "oui" : "non"}`;
@@ -258,6 +269,7 @@ function startGame(roomCode?: string) {
   try { localStorage.setItem("goofy-plane-color", $<HTMLInputElement>("color").value); } catch { /* ignore */ }
   firstPerson = $<HTMLSelectElement>("view").value === "1";
   touchMode.on = $<HTMLSelectElement>("ctrl").value === "touch";
+  document.body.classList.toggle("touch-controls-active", touchMode.on);
   startAudio();
   if (touchMode.on) enableTouch();
   scene.remove(me); me = makePlane(myColor, selectedModel); scene.add(me);
@@ -336,6 +348,7 @@ function loop() {
         const o = me.position.clone().addScaledVector(fwd, 6);
         ws.send(JSON.stringify({ t: "shoot", o: o.toArray(), d: fwd.toArray(), weapon }));
         shoot(o, fwd.clone(), weapon);
+        playShotSound(weapon);
       }
     }
     for (const r of remotes.values()) {
@@ -357,7 +370,6 @@ function loop() {
       camera.up.set(0, 1, 0).applyQuaternion(me.quaternion);
       camera.lookAt(camera.position.clone().add(fwd.clone().multiplyScalar(20)));
       camPos.copy(camera.position);
-      playShotSound(weapon);
     } else {
       tmp.set(0, 4, 16).applyQuaternion(me.quaternion).add(me.position);
       camPos.lerp(tmp, Math.min(1, dt * 6)); camera.position.copy(camPos);
@@ -372,6 +384,7 @@ function loop() {
     healthFill.style.width = `${Math.max(0, Math.min(100, hp))}%`;
     healthFill.style.background = hp <= 30 ? "#ef4444" : hp <= 60 ? "#f5c542" : "#42d66b";
   }
+  camera.updateMatrixWorld();
   for (const r of remotes.values()) {
     r.mesh.position.lerp(r.tp, Math.min(1, dt * 12)); r.mesh.quaternion.slerp(r.tq, Math.min(1, dt * 12));
     const projected = r.mesh.position.clone().project(camera);
@@ -383,7 +396,7 @@ function loop() {
     r.pointer.style.display = "block"; r.pointer.style.left = `${x - 7}px`; r.pointer.style.top = `${y - 9}px`;
     const arrow = r.pointer.querySelector("i"); if (arrow) arrow.style.transform = `rotate(${angle}rad)`;
   }
-  if (mapContext && terrain) {
+  if (mapContext && terrain && showMinimap) {
     const dpr = Math.min(devicePixelRatio, 2), size = 170;
     if (minimap.width !== Math.round(size * dpr) || minimap.height !== Math.round(size * dpr)) { minimap.width = Math.round(size * dpr); minimap.height = Math.round(size * dpr); }
     mapContext.setTransform(dpr, 0, 0, dpr, 0, 0);
