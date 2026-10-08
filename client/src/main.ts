@@ -20,22 +20,31 @@ addEventListener("resize", () => {
 let terrain: Terrain | null = null, tview: TerrainView | null = null;
 let ws: WebSocket | null = null, myId = -1;
 let selectedModel = 0;
-let me = makePlane(0xe53935); scene.add(me);
-const vel = { speed: 55, throttle: 0.5 };
+let myColor = 0xe53935;
+try { const c = localStorage.getItem("goofy-plane-color"); if (c && /^#[0-9a-f]{6}$/i.test(c)) { $<HTMLInputElement>("color").value = c; myColor = parseInt(c.slice(1), 16); } } catch { /* ignore */ }
+let me = makePlane(myColor); scene.add(me);
+let firstPerson = false;
+const touchMode = { on: false, tilt: { lr: 0, fb: 0 }, neutral: null as null | { b: number; g: number }, throttleDir: 0, fire: false };
+const vel = { speed: 55, throttle: 0.5, vy: 0 };
+const GRAVITY = 9.8;
+let stallMsg = 0;
+const upv = new THREE.Vector3(), rightv = new THREE.Vector3(), yAxis = new THREE.Vector3(0, 1, 0);
 let hp = 100, kills = 0, deaths = 0, crashedUntil = 0;
-interface Remote { mesh: THREE.Group; tp: THREE.Vector3; tq: THREE.Quaternion; name: string; label: THREE.Sprite; model: number }
+interface Remote { mesh: THREE.Group; tp: THREE.Vector3; tq: THREE.Quaternion; name: string; label: THREE.Sprite; model: number; color: number }
 const remotes = new Map<number, Remote>();
 const names = new Map<number, string>();
 const keys = new Set<string>();
 const tracers: { m: THREE.Mesh; life: number; v: THREE.Vector3 }[] = [];
-type Action = "pitchUp" | "pitchDown" | "rollLeft" | "rollRight" | "yawLeft" | "yawRight" | "throttleUp" | "throttleDown" | "fire";
+type Action = "toggleView" | "pitchUp" | "pitchDown" | "rollLeft" | "rollRight" | "yawLeft" | "yawRight" | "throttleUp" | "throttleDown" | "fire";
 const defaults: Record<Action, string> = {
-  pitchUp: "KeyZ", pitchDown: "KeyS", rollLeft: "KeyQ", rollRight: "KeyD",
-  yawLeft: "KeyA", yawRight: "KeyE", throttleUp: "ShiftLeft", throttleDown: "ControlLeft", fire: "Space",
+  toggleView: "KeyV",
+  // AZERTY : KeyW = Z, KeyA = Q, KeyQ = A (codes physiques)
+  pitchUp: "KeyW", pitchDown: "KeyS", rollLeft: "KeyA", rollRight: "KeyD",
+  yawLeft: "KeyQ", yawRight: "KeyE", throttleUp: "ShiftLeft", throttleDown: "ControlLeft", fire: "Space",
 };
 const bindings: Record<Action, string> = { ...defaults };
 try {
-  const saved = JSON.parse(localStorage.getItem("goofy-plane-controls") ?? "{}");
+  const saved = JSON.parse(localStorage.getItem("goofy-plane-controls-azerty") ?? "{}");
   for (const action of Object.keys(defaults) as Action[]) {
     if (typeof saved[action] === "string") bindings[action] = saved[action];
   }
@@ -46,7 +55,7 @@ let weapon: "gun" | "rocket" = "gun";
 function respawn() {
   const x = (Math.random() - 0.5) * 2000, z = (Math.random() - 0.5) * 2000;
   me.position.set(x, Math.max(terrain?.height(x, z) ?? 0, 0) + 250, z);
-  me.quaternion.identity(); vel.speed = 55; vel.throttle = 0.5; hp = 100;
+  me.quaternion.identity(); vel.speed = 70; vel.throttle = 0.5; vel.vy = 0; hp = 100;
 }
 function feed(text: string) {
   const d = document.createElement("div"); d.textContent = text; $("feed").append(d);
@@ -61,7 +70,7 @@ function shoot(o: THREE.Vector3, d: THREE.Vector3, type: "gun" | "rocket" = "gun
 function connect(name: string, roomCode?: string) {
   const room = roomCode ? `?room=${encodeURIComponent(roomCode)}` : "";
   ws = new WebSocket(`${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/ws${room}`);
-  ws.onopen = () => ws!.send(JSON.stringify({ t: "name", name, model: selectedModel }));
+  ws.onopen = () => ws!.send(JSON.stringify({ t: "name", name, model: selectedModel, color: myColor }));
   ws.onclose = () => feed("Déconnecté du serveur");
   ws.onmessage = (ev) => {
     const m = JSON.parse(ev.data);
@@ -95,12 +104,12 @@ function connect(name: string, roomCode?: string) {
           if (p.id === myId) continue;
           let r = remotes.get(p.id);
           if (!r) {
-            const mesh = makePlane(0x1e88e5, p.model ?? 0); scene.add(mesh);
-            r = { mesh, tp: new THREE.Vector3(), tq: new THREE.Quaternion(), name: "", label: null as any, model: p.model ?? 0 };
+            const mesh = makePlane(p.c ?? 0x1e88e5, p.model ?? 0); scene.add(mesh);
+            r = { mesh, tp: new THREE.Vector3(), tq: new THREE.Quaternion(), name: "", label: null as any, model: p.model ?? 0, color: p.c ?? 0x1e88e5 };
             setName(r, names.get(p.id) ?? p.n); remotes.set(p.id, r);
             mesh.position.set(p.p[0], p.p[1], p.p[2]);
-          } else if (r.model !== (p.model ?? 0)) {
-            const mesh = makePlane(0x1e88e5, p.model ?? 0);
+          } else if (r.model !== (p.model ?? 0) || r.color !== (p.c ?? 0x1e88e5)) {
+            const mesh = makePlane(p.c ?? 0x1e88e5, p.model ?? 0); r.color = p.c ?? 0x1e88e5;
             mesh.position.copy(r.mesh.position); mesh.quaternion.copy(r.mesh.quaternion);
             scene.remove(r.mesh); r.mesh = mesh; r.model = p.model ?? 0; scene.add(mesh); setName(r, r.name);
           }
@@ -121,10 +130,12 @@ const chat = $<HTMLInputElement>("chat");
 const actionLabels: Record<Action, string> = {
   pitchUp: "Piquer / cabrer haut", pitchDown: "Cabrer bas", rollLeft: "Roulis gauche", rollRight: "Roulis droite",
   yawLeft: "Lacet gauche", yawRight: "Lacet droite", throttleUp: "Augmenter les gaz",
-  throttleDown: "Réduire les gaz", fire: "Tirer",
+  throttleDown: "Réduire les gaz", fire: "Tirer", toggleView: "Changer de vue (1ère/3ème)",
 };
 const keybinds = $("keybinds");
 function keyLabel(code: string) {
+  const azerty: Record<string, string> = { KeyW: "Z", KeyZ: "W", KeyQ: "A", KeyA: "Q", Semicolon: "M", KeyM: ",", Digit1: "&", Digit2: "é" };
+  if (azerty[code]) return azerty[code];
   return code.replace(/^Key/, "").replace(/^Digit/, "").replace("Left", " gauche").replace("Right", " droite");
 }
 function renderBindings() {
@@ -144,7 +155,7 @@ addEventListener("keydown", (e) => {
     if (e.code === "Escape") bindingAction = null;
     else {
       bindings[bindingAction] = e.code;
-      localStorage.setItem("goofy-plane-controls", JSON.stringify(bindings));
+      localStorage.setItem("goofy-plane-controls-azerty", JSON.stringify(bindings));
       bindingAction = null;
     }
     renderBindings(); e.preventDefault(); return;
@@ -154,6 +165,7 @@ addEventListener("keydown", (e) => {
     return;
   }
   if (e.key === "Enter" && terrain) { chat.style.display = "block"; chat.focus(); e.preventDefault(); return; }
+  if (e.code === bindings.toggleView && !e.repeat) toggleView();
   if (e.code === "Digit1" || e.code === "Digit2") {
     weapon = e.code === "Digit1" ? "gun" : "rocket";
     feed(weapon === "gun" ? "Arme : mitrailleuse" : "Arme : roquettes");
@@ -161,12 +173,44 @@ addEventListener("keydown", (e) => {
   keys.add(e.code); if (e.code === "Space") e.preventDefault();
 });
 addEventListener("keyup", (e) => keys.delete(e.code));
+function toggleView() { firstPerson = !firstPerson; feed(firstPerson ? "Vue : 1ère personne" : "Vue : 3ème personne"); }
+function enableTouch() {
+  $("touch").style.display = "block";
+  const hold = (id: string, on: () => void, off: () => void) => {
+    const b = $(id); b.addEventListener("pointerdown", (e) => { e.preventDefault(); on(); });
+    for (const t of ["pointerup", "pointercancel", "pointerleave"]) b.addEventListener(t, off);
+  };
+  hold("t-fire", () => (touchMode.fire = true), () => (touchMode.fire = false));
+  hold("t-up", () => (touchMode.throttleDir = 1), () => (touchMode.throttleDir = 0));
+  hold("t-down", () => (touchMode.throttleDir = -1), () => (touchMode.throttleDir = 0));
+  $("t-weapon").addEventListener("click", () => { weapon = weapon === "gun" ? "rocket" : "gun"; feed(weapon === "gun" ? "Arme : mitrailleuse" : "Arme : roquettes"); });
+  $("t-cam").addEventListener("click", toggleView);
+  const start = () => addEventListener("deviceorientation", (e) => {
+    if (e.beta == null || e.gamma == null) return;
+    const ang = (screen.orientation?.angle ?? (window as any).orientation ?? 0) as number;
+    // Normalise selon l'orientation de l'écran : lr = inclinaison gauche/droite, fb = avant/arrière
+    let lr = e.gamma, fb = e.beta;
+    if (ang === 90) { lr = -e.beta; fb = e.gamma; } else if (ang === 270 || ang === -90) { lr = e.beta; fb = -e.gamma; } else if (ang === 180) { lr = -e.gamma; fb = -e.beta; }
+    if (!touchMode.neutral) touchMode.neutral = { b: lr, g: fb };
+    touchMode.tilt.lr = lr - touchMode.neutral.b; touchMode.tilt.fb = fb - touchMode.neutral.g;
+  });
+  const DOE = (window as any).DeviceOrientationEvent;
+  if (DOE && typeof DOE.requestPermission === "function") DOE.requestPermission().then((r: string) => { if (r === "granted") start(); }).catch(() => feed("Gyroscope refusé"));
+  else start();
+  $("t-cam").addEventListener("dblclick", () => (touchMode.neutral = null));
+  feed("Gyroscope : inclinez le téléphone (double-tap Vue pour recalibrer)");
+}
 const k = (action: Action) => keys.has(bindings[action]);
 
 function startGame(roomCode?: string) {
   const name = $<HTMLInputElement>("name").value.trim() || "Pilote";
   selectedModel = Number($<HTMLSelectElement>("aircraft").value) || 0;
-  scene.remove(me); me = makePlane(0xe53935, selectedModel); scene.add(me);
+  myColor = parseInt($<HTMLInputElement>("color").value.slice(1), 16) || 0xe53935;
+  try { localStorage.setItem("goofy-plane-color", $<HTMLInputElement>("color").value); } catch { /* ignore */ }
+  firstPerson = $<HTMLSelectElement>("view").value === "1";
+  touchMode.on = $<HTMLSelectElement>("ctrl").value === "touch";
+  if (touchMode.on) enableTouch();
+  scene.remove(me); me = makePlane(myColor, selectedModel); scene.add(me);
   $("menu").style.display = "none";
   connect(name, roomCode);
 }
@@ -190,27 +234,46 @@ function loop() {
   if (terrain && tview) {
     const rot = (axis: [number, number, number], a: number) => { ax.set(...axis); me.quaternion.multiply(qd.setFromAxisAngle(ax, a)); };
     if (now > crashedUntil) {
-      const pitch = k("pitchDown") ? 1 : k("pitchUp") ? -1 : 0;
-      const roll = k("rollRight") ? -1 : k("rollLeft") ? 1 : 0;
+      const dz = (v: number) => Math.abs(v) < 4 ? 0 : Math.max(-1, Math.min(1, (v - Math.sign(v) * 4) / 25));
+      let pitch = k("pitchDown") ? 1 : k("pitchUp") ? -1 : 0;
+      let roll = k("rollRight") ? -1 : k("rollLeft") ? 1 : 0;
       const yaw = k("yawLeft") ? 1 : k("yawRight") ? -1 : 0;
-      rot([1, 0, 0], pitch * 1.1 * dt);
-      rot([0, 0, 1], roll * 1.8 * dt);
-      rot([0, 1, 0], yaw * 0.6 * dt);
-      if (k("throttleUp")) vel.throttle = Math.min(1, vel.throttle + 0.5 * dt);
-      if (k("throttleDown")) vel.throttle = Math.max(0, vel.throttle - 0.5 * dt);
+      let thr = (k("throttleUp") ? 1 : 0) - (k("throttleDown") ? 1 : 0);
+      if (touchMode.on) { roll = roll || -dz(touchMode.tilt.lr); pitch = pitch || dz(touchMode.tilt.fb); thr = thr || touchMode.throttleDir; }
+      // les gouvernes sont moins efficaces à basse vitesse
+      const authority = Math.max(0.35, Math.min(1.1, vel.speed / 70));
+      rot([1, 0, 0], pitch * 1.1 * authority * dt);
+      rot([0, 0, 1], roll * 1.8 * authority * dt);
+      rot([0, 1, 0], yaw * 0.6 * authority * dt);
+      vel.throttle = Math.max(0, Math.min(1, vel.throttle + thr * 0.5 * dt));
       fwd.set(0, 0, -1).applyQuaternion(me.quaternion);
-      const target = 30 + vel.throttle * 90 - fwd.y * 40;
-      vel.speed += (target - vel.speed) * dt * 0.8;
+      upv.set(0, 1, 0).applyQuaternion(me.quaternion);
+      rightv.set(1, 0, 0).applyQuaternion(me.quaternion);
+      // virage naturel en inclinant les ailes
+      me.quaternion.premultiply(qd.setFromAxisAngle(yAxis, rightv.y * 0.9 * authority * dt));
+      // poussée - traînée - composante de la gravité le long de l'axe de l'avion
+      vel.speed += (vel.throttle * 42 - 0.0036 * vel.speed * vel.speed - 16 * fwd.y) * dt;
+      vel.speed = Math.max(8, vel.speed);
+      // portance ~ v², orientée selon le haut de l'avion ; gravité constante ; amortissement vertical
+      const lift = Math.min(1.25, (vel.speed / 62) ** 2) * Math.max(0, upv.y);
+      vel.vy += (-GRAVITY + GRAVITY * lift) * dt;
+      vel.vy -= vel.vy * 0.6 * dt;
+      // décrochage : le nez plonge quand la vitesse est trop faible
+      if (vel.speed < 40) {
+        const s = (40 - vel.speed) / 40;
+        me.quaternion.multiply(qd.setFromAxisAngle(ax.set(1, 0, 0), -s * 0.9 * dt));
+        if (s > 0.25 && now - stallMsg > 3000) { stallMsg = now; feed("⚠ Décrochage !"); }
+      }
       me.position.addScaledVector(fwd, vel.speed * dt);
-      // stall / gravity pull when slow
-      if (vel.speed < 38) me.position.y -= (38 - vel.speed) * dt * 1.5;
+      me.position.y += vel.vy * dt;
       me.position.y = Math.min(me.position.y, 1800);
       const ground = Math.max(terrain.height(me.position.x, me.position.z), 0);
       if (me.position.y < ground + 3) {
         feed("💥 Crash !"); ws?.send(JSON.stringify({ t: "died" })); deaths++; respawn(); crashedUntil = now + 500;
       }
+      const fire = k("fire") || touchMode.fire;
       const fireDelay = weapon === "rocket" ? 700 : 100;
-      if (k("fire") && now - shootT > fireDelay && ws?.readyState === 1) {
+      if (fire && now - shootT > fireDelay && ws?.readyState === 1) {
         shootT = now;
         const o = me.position.clone().addScaledVector(fwd, 6);
         ws.send(JSON.stringify({ t: "shoot", o: o.toArray(), d: fwd.toArray(), weapon }));
@@ -219,9 +282,18 @@ function loop() {
     }
     (me.getObjectByName("prop") as THREE.Object3D).rotation.z += dt * 40;
     tview.update(me.position.x, me.position.z);
-    tmp.set(0, 4, 16).applyQuaternion(me.quaternion).add(me.position);
-    camPos.lerp(tmp, Math.min(1, dt * 6)); camera.position.copy(camPos);
-    camera.up.set(0, 1, 0).applyQuaternion(me.quaternion); camera.lookAt(me.position.clone().addScaledVector(fwd, 20));
+    me.visible = !firstPerson;
+    if (firstPerson) {
+      const sc = me.scale.x;
+      camera.position.copy(tmp.set(0, 0.95 * sc, -1.6 * sc).applyQuaternion(me.quaternion).add(me.position));
+      camera.up.set(0, 1, 0).applyQuaternion(me.quaternion);
+      camera.lookAt(camera.position.clone().add(fwd.clone().multiplyScalar(20)));
+      camPos.copy(camera.position);
+    } else {
+      tmp.set(0, 4, 16).applyQuaternion(me.quaternion).add(me.position);
+      camPos.lerp(tmp, Math.min(1, dt * 6)); camera.position.copy(camPos);
+      camera.up.set(0, 1, 0).applyQuaternion(me.quaternion); camera.lookAt(me.position.clone().addScaledVector(fwd, 20));
+    }
     if (now - sendT > 50 && ws?.readyState === 1) {
       sendT = now;
       ws.send(JSON.stringify({ t: "state", p: me.position.toArray(), q: me.quaternion.toArray() }));

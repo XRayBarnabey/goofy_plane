@@ -76,14 +76,28 @@ export class TerrainView {
       dash.position.set(i * 150, 25.35, 0);
       city.add(dash);
     }
-    const facadeColors = [0x777b83, 0xb49c82, 0x657985, 0xaaa9a2, 0x68706e];
-    const windowsMaterial = new THREE.MeshLambertMaterial({ color: 0x476c80 });
+    const facadeColors = [0x8a8f98, 0xc2a98a, 0x6f8797, 0xb9b8b0, 0x77807e, 0xa1665a];
+    const glassMaterial = new THREE.MeshLambertMaterial({ color: 0x5aa2c8, emissive: 0x1a3a50 });
+    const roofMaterial = new THREE.MeshLambertMaterial({ color: 0x3a3f45 });
+    const bandMaterial = new THREE.MeshLambertMaterial({ color: 0xdedede });
+    const park = new THREE.MeshLambertMaterial({ color: 0x4a9a45 });
     for (let ix = -5; ix <= 5; ix++) for (let iz = -5; iz <= 5; iz++) {
       const x = ix * 150 + ((ix * 37 + iz * 19) % 23);
       const z = iz * 150 + ((iz * 29 + ix * 11) % 23);
+      if ((ix * 3 + iz * 5) % 7 === 0) {
+        const lawn = new THREE.Mesh(new THREE.BoxGeometry(90, 0.4, 90), park); lawn.position.set(x, 25.3, z); city.add(lawn);
+        for (let i = 0; i < 6; i++) {
+          const tx = x + ((i * 37) % 70) - 35, tz = z + ((i * 53) % 70) - 35;
+          const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.6, 0.8, 5, 6), new THREE.MeshLambertMaterial({ color: 0x6b4a2b }));
+          trunk.position.set(tx, 28, tz);
+          const crown = new THREE.Mesh(new THREE.ConeGeometry(4.5, 12, 7), new THREE.MeshLambertMaterial({ color: 0x2f7d32 }));
+          crown.position.set(tx, 36, tz); city.add(trunk, crown);
+        }
+        continue;
+      }
       const width = 48 + Math.abs((ix * 7 + iz * 13) % 28);
       const depth = 48 + Math.abs((ix * 11 + iz * 5) % 28);
-      const floors = 3 + Math.abs((ix * 17 + iz * 23) % 10);
+      const floors = 3 + Math.abs((ix * 17 + iz * 23) % 14);
       const height = floors * 8;
       const building = new THREE.Mesh(
         new THREE.BoxGeometry(width, height, depth),
@@ -91,12 +105,27 @@ export class TerrainView {
       );
       building.position.set(x, 25 + height / 2, z);
       city.add(building);
-      const frontWindows = new THREE.Mesh(new THREE.BoxGeometry(width * 0.68, height * 0.72, 0.3), windowsMaterial);
-      frontWindows.position.set(x, building.position.y, z - depth / 2 - 0.2);
-      city.add(frontWindows);
-      const sideWindows = new THREE.Mesh(new THREE.BoxGeometry(0.3, height * 0.72, depth * 0.68), windowsMaterial);
-      sideWindows.position.set(x + width / 2 + 0.2, building.position.y, z);
-      city.add(sideWindows);
+      // window bands on each floor, all four faces
+      for (let f = 0; f < floors; f++) {
+        const y = 25 + f * 8 + 4.5;
+        for (const s of [-1, 1]) {
+          const fb = new THREE.Mesh(new THREE.BoxGeometry(width * 0.86, 3.2, 0.3), glassMaterial);
+          fb.position.set(x, y, z + s * (depth / 2 + 0.15)); city.add(fb);
+          const sb = new THREE.Mesh(new THREE.BoxGeometry(0.3, 3.2, depth * 0.86), glassMaterial);
+          sb.position.set(x + s * (width / 2 + 0.15), y, z); city.add(sb);
+        }
+      }
+      const base = new THREE.Mesh(new THREE.BoxGeometry(width + 3, 3, depth + 3), bandMaterial);
+      base.position.set(x, 26.5, z); city.add(base);
+      const roof = new THREE.Mesh(new THREE.BoxGeometry(width + 2, 1.5, depth + 2), roofMaterial);
+      roof.position.set(x, 25 + height + 0.75, z); city.add(roof);
+      if (floors > 9) {
+        const antenna = new THREE.Mesh(new THREE.CylinderGeometry(0.3, 0.5, 18, 6), roofMaterial);
+        antenna.position.set(x, 25 + height + 10, z); city.add(antenna);
+      } else {
+        const unit = new THREE.Mesh(new THREE.BoxGeometry(width * 0.3, 4, depth * 0.3), bandMaterial);
+        unit.position.set(x + width * 0.15, 25 + height + 3.5, z); city.add(unit);
+      }
     }
     this.group.add(city);
   }

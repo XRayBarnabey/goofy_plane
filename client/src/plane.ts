@@ -14,8 +14,9 @@ export function makePlane(color: number, model = 0) {
   const prop = new THREE.Mesh(new THREE.BoxGeometry(3, 0.2, 0.1), new THREE.MeshBasicMaterial({ color: 0x222222 }));
   prop.position.z = -5; prop.name = "prop";
   const cockpit = new THREE.Mesh(new THREE.SphereGeometry(0.62, 10, 8), new THREE.MeshLambertMaterial({ color: 0x86d5ed }));
-  cockpit.scale.set(0.8, 0.65, 1.5); cockpit.position.set(0, 0.52, -1.1);
-  g.add(body, nose, wing, tail, fin, prop, cockpit);
+  cockpit.scale.set(0.8, 0.65, 1.5); cockpit.position.set(0, 0.52, -1.1); cockpit.name = "cockpit";
+  const stripe = new THREE.Mesh(new THREE.BoxGeometry(11.2, 0.17, 0.4), m); stripe.position.z = -0.1;
+  g.add(body, nose, wing, tail, fin, prop, cockpit, stripe);
   if (model > 0) {
     const engineCount = model === 1 ? 2 : 4;
     for (let i = 0; i < engineCount; i++) {
